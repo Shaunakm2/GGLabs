@@ -1,0 +1,10 @@
+tools/shots/
+tools/*-out.txt
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+node_modules/
+.env
+.env.*

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" data-base="./">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>Log in · GG Learning Labs</title>
+<meta name="description" content="Sign in to GG Learning Labs.">
+<script>
+  (function () {
+    try {
+      var p = localStorage.getItem('ggl.theme');
+      var dark = p === 'dark' || (!p && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+  })();
+</script>
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/components.css">
+<link rel="stylesheet" href="assets/css/layout.css">
+<link rel="stylesheet" href="assets/css/public.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <aside class="auth-aside">
+    <a class="logo" href="index.html" style="position:relative;z-index:1">
+      <span class="logo-mark" aria-hidden="true" style="background:rgba(255,255,255,.16)">GG</span>
+      <span class="logo-text">
+        <span class="name" style="color:#fff">GG Learning Labs</span>
+        <span class="tag" style="color:rgba(255,255,255,.7)">L&amp;D Platform</span>
+      </span>
+    </a>
+    <div class="quote">
+      <h2>One platform. Every L&amp;D need.</h2>
+      <p>Plan, design, deliver, measure and improve your entire Learning &amp; Development ecosystem.</p>
+      <ul class="auth-points" id="auth-points"></ul>
+    </div>
+    <p class="text-sm" style="color:rgba(255,255,255,.65);position:relative;z-index:1;margin:0">
+      Frontend prototype · Sample data only
+    </p>
+  </aside>
+
+  <div class="auth-panel">
+    <div class="auth-card">
+      <div class="row-between mb-6">
+        <a class="logo" href="index.html">
+          <span class="logo-mark" aria-hidden="true">GG</span>
+          <span class="logo-text"><span class="name">GG Learning Labs</span></span>
+        </a>
+        <button type="button" class="btn-icon tooltip" data-theme-toggle data-tip="Theme"></button>
+      </div>
+
+      <h1>Welcome back</h1>
+      <p class="lede">Sign in to your workspace.</p>
+      <div id="login-alert" class="mb-4" hidden></div>
+
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label class="label" for="email">Email address <span class="req">*</span></label>
+          <input class="input" id="email" name="email" type="email" autocomplete="username"
+                 placeholder="you@company.com" required>
+        </div>
+        <div class="field">
+          <div class="row-between mb-2">
+            <label class="label mb-0" for="password" style="margin:0">Password <span class="req">*</span></label>
+            <a class="text-sm" href="forgot-password.html">Forgot password?</a>
+          </div>
+          <input class="input" id="password" name="password" type="password"
+                 autocomplete="current-password" placeholder="••••••••" required>
+        </div>
+        <label class="check mb-4">
+          <input type="checkbox" name="remember" checked>
+          <span>Keep me signed in on this device</span>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block btn-lg">Sign in</button>
+      </form>
+
+      <p class="text-center text-sm text-muted mt-6">
+        Don't have an account? <a href="#" data-create-account>Create one</a>
+      </p>
+
+      <div class="demo-creds">
+        <h4>Demo accounts — any password of 6+ characters</h4>
+        <div id="demo-list"></div>
+        <p class="hint mt-3" style="margin-bottom:0">
+          Mock authentication only. No passwords are stored or verified.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/core/icons.js"></script>
+<script src="assets/js/core/utils.js"></script>
+<script src="assets/js/core/config.js"></script>
+<script src="assets/js/core/theme.js"></script>
+<script src="assets/js/components/ui.js"></script>
+<script src="assets/js/data/seed.js"></script>
+<script src="assets/js/data/users.js"></script>
+<script src="assets/js/data/catalog.js"></script>
+<script src="assets/js/data/insights.js"></script>
+<script src="assets/js/data/assessments.js"></script>
+<script src="assets/js/data/lnd.js"></script>
+<script src="assets/js/services/authService.js"></script>
+<script src="assets/js/services/dataService.js"></script>
+<script src="assets/js/pages/login.js"></script>
+</body>
+</html>

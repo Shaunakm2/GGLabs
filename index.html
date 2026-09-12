@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en" data-base="./">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>GG Learning Labs — One Platform. Every L&amp;D Need.</title>
+<meta name="description" content="GG Learning Labs is a complete Learning &amp; Development management platform. Plan, design, deliver, measure and improve your entire L&amp;D ecosystem from one place.">
+
+<script>
+  (function () {
+    try {
+      var p = localStorage.getItem('ggl.theme');
+      var dark = p === 'dark' || (!p && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+  })();
+</script>
+
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/components.css">
+<link rel="stylesheet" href="assets/css/charts.css">
+<link rel="stylesheet" href="assets/css/public.css">
+</head>
+
+<body class="site">
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<header class="site-header" id="site-header">
+  <div class="container">
+    <div class="bar">
+      <a class="logo" href="index.html" aria-label="GG Learning Labs home">
+        <span class="logo-mark" aria-hidden="true">GG</span>
+        <span class="logo-text">
+          <span class="name">GG Learning Labs</span>
+          <span class="tag">L&amp;D Platform</span>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#platform">Platform</a>
+        <a href="#lifecycle">Solutions</a>
+        <a href="#services">Services</a>
+        <a href="#modules">Resources</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#about">About</a>
+        <a href="#support">Support</a>
+      </nav>
+
+      <div class="header-actions">
+        <button type="button" class="btn-icon tooltip" data-theme-toggle data-tip="Theme"></button>
+        <a class="btn btn-secondary" href="login.html">Log in</a>
+        <a class="btn btn-primary" href="login.html">Get started</a>
+        <button type="button" class="btn-icon nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-nav" id="mobile-nav">
+    <div class="container">
+      <a href="#platform">Platform</a>
+      <a href="#lifecycle">Solutions</a>
+      <a href="#services">Services</a>
+      <a href="#modules">Resources</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#about">About</a>
+      <a href="#support">Support</a>
+      <div class="btn-group">
+        <a class="btn btn-secondary" href="login.html">Log in</a>
+        <a class="btn btn-primary" href="login.html">Get started</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero">
+    <div class="container">
+      <div class="hero-inner">
+        <span class="eyebrow" data-icon="zap">Complete L&amp;D management platform</span>
+        <h1>One Platform.<br><span class="grad">Every L&amp;D Need.</span></h1>
+        <p class="lede">
+          Plan, design, deliver, measure and improve your entire Learning &amp; Development
+          ecosystem from one place — not just another course catalogue.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary btn-lg" href="#platform">Explore the platform</a>
+          <a class="btn btn-secondary btn-lg" href="login.html">Get started</a>
+          <button type="button" class="btn btn-ghost btn-lg" data-demo-request>Request a demo</button>
+        </div>
+        <p class="hero-note">No credit card required · Prototype build with sample data</p>
+      </div>
+
+      <div class="mockup" aria-hidden="true">
+        <div class="mockup-bar">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="url">app.gglearninglabs.example / dashboard</span>
+        </div>
+        <div class="mockup-body">
+          <div class="mockup-grid" id="mockup-stats"></div>
+          <div class="mockup-panel">
+            <div class="card card-pad"><div id="mockup-chart"></div></div>
+            <div class="card card-pad"><div id="mockup-donut"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec-sm">
+    <div class="container">
+      <p class="text-center text-sm text-subtle mb-6">Built for L&amp;D teams managing capability at scale</p>
+      <div class="logo-strip">
+        <span>NORTHWIND</span><span>ACME GROUP</span><span>CONTOSO</span>
+        <span>FABRIKAM</span><span>LITWARE</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-alt" id="platform">
+    <div class="container">
+      <div class="sec-head">
+        <h2>The whole lifecycle, not a fragment of it</h2>
+        <p>Most tools handle one slice of L&amp;D and leave you stitching the rest together in spreadsheets. This is the full loop.</p>
+      </div>
+      <div class="grid grid-4" id="capabilities"></div>
+    </div>
+  </section>
+
+  <section class="sec" id="lifecycle">
+    <div class="container">
+      <div class="sec-head">
+        <h2>How it works</h2>
+        <p>A continuous loop — every stage feeds evidence into the next.</p>
+      </div>
+      <div class="lifecycle" id="lifecycle-steps"></div>
+    </div>
+  </section>
+
+  <section class="sec sec-alt">
+    <div class="container">
+      <div class="sec-head">
+        <h2>See the platform in ninety seconds</h2>
+        <p>A walkthrough of planning, delivery, measurement and the improvement loop.</p>
+      </div>
+      <button type="button" class="video-frame" data-video aria-label="Play product overview video">
+        <span class="video-play" aria-hidden="true"></span>
+        <span class="video-caption">
+          <strong>Product overview</strong>
+          <span>1:32 · Planning through to effectiveness measurement</span>
+        </span>
+      </button>
+    </div>
+  </section>
+
+  <section class="sec" id="modules">
+    <div class="container">
+      <div class="sec-head">
+        <h2>Modules in the ecosystem</h2>
+        <p>Live modules are available in this prototype. The rest are mapped and planned.</p>
+      </div>
+      <div class="module-grid" id="module-pills"></div>
+    </div>
+  </section>
+
+  <section class="sec-sm sec-alt">
+    <div class="container">
+      <div class="stats-band">
+        <div><div class="num">25+</div><div class="lbl">Live L&amp;D modules</div></div>
+        <div><div class="num">3</div><div class="lbl">Role-based experiences</div></div>
+        <div><div class="num">9</div><div class="lbl">Lifecycle stages covered</div></div>
+        <div><div class="num">1</div><div class="lbl">Platform to run it all</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="services">
+    <div class="container">
+      <div class="sec-head">
+        <h2>L&amp;D services, alongside the software</h2>
+        <p>Where your team needs capacity or specialist skill, the services sit inside the same platform.</p>
+      </div>
+      <div class="grid grid-3" id="services-grid"></div>
+    </div>
+  </section>
+
+  <section class="sec sec-alt" id="pricing">
+    <div class="container">
+      <div class="sec-head">
+        <h2>Straightforward pricing</h2>
+        <p>Indicative pricing for the prototype. No payment processing is connected.</p>
+      </div>
+
+      <div class="pricing-toggle">
+        <div class="segmented" role="group" aria-label="Billing period">
+          <button type="button" data-billing="monthly" aria-pressed="true">Monthly</button>
+          <button type="button" data-billing="yearly" aria-pressed="false">
+            Yearly <span class="save-badge">−20%</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="price-grid" id="pricing-grid"></div>
+
+      <p class="text-center text-sm text-muted mt-8">
+        All plans include the public site, role-based access and standard support.
+        Prices exclude applicable taxes.
+      </p>
+    </div>
+  </section>
+
+  <section class="sec" id="about">
+    <div class="container">
+      <div class="split-1-1" style="align-items:center;gap:var(--sp-12)">
+        <div>
+          <span class="eyebrow" data-icon="lightbulb">About GG Learning Labs</span>
+          <h2>Built by L&amp;D people, for L&amp;D people</h2>
+          <p class="text-muted">
+            Learning teams are asked to prove impact with tools that were never designed to
+            measure it. Course completions get counted; capability rarely does.
+          </p>
+          <p class="text-muted">
+            GG Learning Labs exists to close that gap — connecting needs analysis, delivery,
+            observation and effectiveness measurement into a single evidence trail that stands
+            up in an audit and actually informs the next intervention.
+          </p>
+          <div class="btn-group mt-6">
+            <a class="btn btn-primary" href="login.html">Explore the prototype</a>
+            <a class="btn btn-secondary" href="#support">Talk to us</a>
+          </div>
+        </div>
+        <div class="grid grid-2 gap-4" id="about-points"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-alt" id="support">
+    <div class="container">
+      <div class="split-3-2" style="gap:var(--sp-12)">
+        <div>
+          <div class="sec-head left" style="margin-bottom:var(--sp-6)">
+            <h2>Frequently asked</h2>
+            <p>The questions we get most often about scope and readiness.</p>
+          </div>
+          <div id="faq"></div>
+        </div>
+
+        <div>
+          <div class="card card-pad">
+            <h3>Contact support</h3>
+            <p class="text-sm text-muted">We reply to prototype enquiries within two working days.</p>
+            <form id="contact-form" novalidate>
+              <div class="field">
+                <label class="label" for="cf-name">Name <span class="req">*</span></label>
+                <input class="input" id="cf-name" name="name" type="text" autocomplete="name" placeholder="Your full name">
+              </div>
+              <div class="field">
+                <label class="label" for="cf-email">Work email <span class="req">*</span></label>
+                <input class="input" id="cf-email" name="email" type="email" autocomplete="email" placeholder="you@company.com">
+              </div>
+              <div class="field">
+                <label class="label" for="cf-topic">Topic</label>
+                <select class="select" id="cf-topic" name="topic">
+                  <option>Product demo</option>
+                  <option>Pricing</option>
+                  <option>Implementation</option>
+                  <option>Something else</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="label" for="cf-message">Message <span class="req">*</span></label>
+                <textarea class="textarea" id="cf-message" name="message" placeholder="How can we help?"></textarea>
+              </div>
+              <button type="submit" class="btn btn-primary btn-block">Send message</button>
+              <p class="hint">Mock submission — nothing is transmitted in this prototype.</p>
+            </form>
+          </div>
+
+          <div class="card card-pad mt-4">
+            <div class="row gap-3">
+              <span class="stat-icon" data-icon="mail"></span>
+              <div>
+                <div class="fw-semi text-sm">Email us</div>
+                <div class="text-sm text-muted">support@gglearninglabs.example</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="container">
+      <div class="cta-band">
+        <h2>Ready to run L&amp;D from one platform?</h2>
+        <p>Sign in with a demo account and explore the Super Admin, Admin and Learner experiences.</p>
+        <div class="btn-group mt-6" style="justify-content:center">
+          <a class="btn btn-primary btn-lg" href="login.html">Get started</a>
+          <button type="button" class="btn btn-secondary btn-lg" data-demo-request>Request a demo</button>
+        </div>
+
+        <div class="mt-8">
+          <p class="text-sm mb-3" style="color:rgba(255,255,255,.85)">Get L&amp;D insights monthly. No noise.</p>
+          <form class="newsletter-form" id="newsletter-form" novalidate>
+            <div class="field">
+              <label class="sr-only" for="nl-email">Email address</label>
+              <input class="input" id="nl-email" name="email" type="email" placeholder="you@company.com" autocomplete="email">
+            </div>
+            <button type="submit" class="btn btn-primary">Subscribe</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="logo" href="index.html">
+          <span class="logo-mark" aria-hidden="true">GG</span>
+          <span class="logo-text">
+            <span class="name">GG Learning Labs</span>
+            <span class="tag">L&amp;D Platform</span>
+          </span>
+        </a>
+        <p>One platform for planning, delivering, measuring and improving Learning &amp; Development.</p>
+        <div class="social" id="social-links"></div>
+      </div>
+
+      <div class="footer-col">
+        <h4>Platform</h4>
+        <ul>
+          <li><a href="#platform">Overview</a></li>
+          <li><a href="#modules">Modules</a></li>
+          <li><a href="#lifecycle">Lifecycle</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Solutions</h4>
+        <ul>
+          <li><a href="#platform">Training management</a></li>
+          <li><a href="#platform">Effectiveness</a></li>
+          <li><a href="#platform">Competency</a></li>
+          <li><a href="#platform">Compliance</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Services</h4>
+        <ul>
+          <li><a href="#services">Training delivery</a></li>
+          <li><a href="#services">Content development</a></li>
+          <li><a href="#services">Coaching</a></li>
+          <li><a href="#services">L&amp;D consulting</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#about">About</a></li>
+          <li><a href="#support">Support</a></li>
+          <li><a href="login.html">Log in</a></li>
+          <li><a href="#support">Contact</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>© <span id="year"></span> GG Learning Labs. Frontend prototype — sample data only.</span>
+      <nav aria-label="Legal">
+        <a href="#support">Privacy</a>
+        <a href="#support">Terms</a>
+        <a href="#support">Accessibility</a>
+      </nav>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/core/icons.js"></script>
+<script src="assets/js/core/utils.js"></script>
+<script src="assets/js/core/config.js"></script>
+<script src="assets/js/core/theme.js"></script>
+<script src="assets/js/components/ui.js"></script>
+<script src="assets/js/components/charts.js"></script>
+<script src="assets/js/pages/home.js"></script>
+</body>
+</html>
