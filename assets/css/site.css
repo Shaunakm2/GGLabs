@@ -91,7 +91,7 @@
 .auth-aside{background:var(--grad-hero);color:#fff;padding:var(--sp-12);display:flex;
   flex-direction:column;justify-content:space-between;position:relative;overflow:hidden;isolation:isolate}
 .auth-aside::before{content:"";position:absolute;inset:0;z-index:-1;
-  background-image:url("../img/hero-dark.jpg");background-size:cover;background-position:center;opacity:.72}
+  background-image:linear-gradient(145deg,rgba(47,107,243,.42),rgba(13,148,136,.18));background-size:cover;background-position:center;opacity:.72}
 .auth-aside::after{content:"";position:absolute;width:520px;height:520px;right:-180px;bottom:-220px;
   z-index:-1;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.18),transparent 68%)}
 .auth-aside h2{color:#fff;font-size:var(--fs-2xl);max-width:22ch}
@@ -166,7 +166,7 @@
 /* ---------- Hero: real artwork behind the headline ---------- */
 .hero{position:relative;padding:var(--sp-20) 0 var(--sp-16);overflow:hidden;isolation:isolate;
   background:var(--grad-hero)}
-.hero-bg{position:absolute;inset:0;z-index:-3;background-image:url("../img/hero-dark.jpg");
+.hero-bg{position:absolute;inset:0;z-index:-3;background-image:linear-gradient(145deg,rgba(47,107,243,.42),rgba(13,148,136,.18));
   background-size:cover;background-position:center;opacity:.92}
 /* Dot matrix gives the artwork structure so it does not read as a blur */
 .hero::before{content:"";position:absolute;inset:0;z-index:-2;
@@ -270,7 +270,7 @@
 .video-frame{position:relative;aspect-ratio:16/9;border-radius:var(--r-xl);overflow:hidden;
   border:1px solid var(--border);background:var(--grad-hero);display:grid;place-items:center;
   box-shadow:var(--sh-xl);cursor:pointer;width:100%;padding:0}
-.video-frame::before{content:"";position:absolute;inset:0;background-image:url("../img/hero-dark.jpg");
+.video-frame::before{content:"";position:absolute;inset:0;background-image:linear-gradient(145deg,rgba(47,107,243,.42),rgba(13,148,136,.18));
   background-size:cover;background-position:center;opacity:.85}
 .video-frame::after{content:"";position:absolute;inset:0;
   background:radial-gradient(circle at 50% 50%,rgba(0,0,0,.10),rgba(0,0,0,.44))}
@@ -319,7 +319,7 @@
 .cta-band{background:var(--grad-hero);border-radius:var(--r-2xl);padding:var(--sp-16) var(--sp-8);
   text-align:center;color:#fff;position:relative;overflow:hidden;isolation:isolate}
 .cta-band::before{content:"";position:absolute;inset:0;z-index:-1;
-  background-image:url("../img/hero-dark.jpg");background-size:cover;background-position:center;opacity:.8}
+  background-image:linear-gradient(145deg,rgba(47,107,243,.42),rgba(13,148,136,.18));background-size:cover;background-position:center;opacity:.8}
 .cta-band::after{content:"";position:absolute;inset:0;z-index:-1;
   background:linear-gradient(120deg,rgba(16,32,74,.72),rgba(13,148,136,.34))}
 .cta-band h2{color:#fff;font-size:var(--fs-3xl);letter-spacing:-.03em}
@@ -364,7 +364,7 @@
 .welcome{background:var(--grad-hero);border-radius:var(--r-lg);padding:var(--sp-6);color:#fff;
   position:relative;overflow:hidden;margin-bottom:var(--sp-6);isolation:isolate}
 .welcome::before{content:"";position:absolute;inset:0;z-index:-1;
-  background-image:url("../img/hero-dark.jpg");background-size:cover;background-position:center;opacity:.7}
+  background-image:linear-gradient(145deg,rgba(47,107,243,.42),rgba(13,148,136,.18));background-size:cover;background-position:center;opacity:.7}
 .welcome h2{color:#fff;font-size:var(--fs-xl);margin-bottom:var(--sp-1)}
 .welcome p{color:rgba(255,255,255,.88);font-size:var(--fs-base);margin:0;max-width:60ch}
 .welcome-meta{display:flex;gap:var(--sp-6);flex-wrap:wrap;margin-top:var(--sp-5)}
@@ -637,7 +637,7 @@ body{padding-top:env(safe-area-inset-top,0)}
 .btn-ghost:hover:not(:disabled){background:var(--accent-soft)}
 .btn-icon{border-radius:10px;background:var(--surface);border-color:var(--border);box-shadow:var(--sh-xs)}
 .hero{min-height:730px;display:flex;align-items:center;padding:clamp(5rem,9vw,8rem) 0;background:#0d1d43}
-.hero-bg{background-image:linear-gradient(90deg,rgba(7,17,42,.94) 0%,rgba(10,28,69,.74) 48%,rgba(8,25,56,.24) 100%),url("../img/hero-dark.jpg");opacity:1;background-position:center;background-size:cover}
+.hero-bg{background-image:linear-gradient(90deg,rgba(7,17,42,.94) 0%,rgba(10,28,69,.74) 48%,rgba(8,25,56,.24) 100%);opacity:1;background-position:center;background-size:cover}
 .hero::after{background:linear-gradient(180deg,rgba(7,17,42,.08),rgba(7,17,42,.16) 75%,rgba(7,17,42,.62))}
 .hero-inner{max-width:1120px;margin:0;text-align:left;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:clamp(2rem,7vw,6rem);align-items:center}
 .hero-copy{max-width:720px}.hero h1{font-size:clamp(3rem,6vw,5.2rem)}
@@ -648,7 +648,7 @@ body{padding-top:env(safe-area-inset-top,0)}
 .hero-visual::before{left:-8px;top:-8px;border-left:4px solid #5eead4;border-top:4px solid #5eead4;border-radius:18px 0 0 0}
 .hero-visual::after{right:-8px;bottom:-8px;border-right:4px solid #5eead4;border-bottom:4px solid #5eead4;border-radius:0 0 18px 0}
 .hero-visual-card{position:relative;min-height:420px;border:1px solid rgba(255,255,255,.18);border-radius:24px;overflow:hidden;background:linear-gradient(145deg,rgba(255,255,255,.16),rgba(255,255,255,.05));box-shadow:0 38px 80px -36px #000;backdrop-filter:blur(10px)}
-.hero-visual-card::before{content:"";position:absolute;inset:0;background:url("../img/hero-light.jpg") center/cover;opacity:.78;mix-blend-mode:screen}
+.hero-visual-card::before{content:"";position:absolute;inset:0;background:linear-gradient(145deg,rgba(47,107,243,.18),rgba(20,184,166,.16));opacity:.78;mix-blend-mode:screen}
 .hero-dashboard{position:absolute;inset:26% 8% 8%;padding:18px;border-radius:18px;background:color-mix(in srgb,var(--surface) 94%,transparent);border:1px solid var(--border);box-shadow:var(--sh-xl)}
 .hero-dashboard .dash-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-weight:700;color:var(--text)}
 .hero-dashboard .dash-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.hero-dashboard .dash-stat{padding:12px;border-radius:12px;background:var(--bg-sunken);color:var(--text-muted);font-size:.75rem}.hero-dashboard .dash-stat b{display:block;color:var(--text);font-size:1.2rem}
@@ -805,13 +805,13 @@ a,button,.btn,.card,.feature-card,.lifecycle-step,.action-tile,.menu-item,.input
 #platform,#lifecycle,#services,#modules{position:relative;isolation:isolate;overflow:hidden}
 #platform::before,#lifecycle::before,#services::before,#modules::before{content:"";position:absolute;inset:0;z-index:-2;background-repeat:no-repeat;background-size:cover;background-position:center;pointer-events:none}
 #platform::after,#lifecycle::after,#services::after,#modules::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none}
-#platform::before{background-image:url("../img/hero-light.jpg");background-position:78% center;opacity:.15}
+#platform::before{background-image:linear-gradient(135deg,rgba(47,107,243,.12),rgba(20,184,166,.08));background-position:78% center;opacity:.15}
 #platform::after{background:linear-gradient(90deg,var(--bg) 0%,color-mix(in srgb,var(--bg) 92%,transparent) 52%,color-mix(in srgb,var(--bg) 72%,transparent) 100%)}
-#lifecycle::before{background-image:url("../img/hero-dark.jpg");background-position:center 42%;opacity:.12}
+#lifecycle::before{background-image:linear-gradient(145deg,rgba(47,107,243,.42),rgba(13,148,136,.18));background-position:center 42%;opacity:.12}
 #lifecycle::after{background:linear-gradient(180deg,color-mix(in srgb,var(--bg-sunken) 94%,transparent),color-mix(in srgb,var(--bg-sunken) 82%,transparent))}
-#services::before{background-image:url("../img/hero-light.jpg");background-position:20% 50%;opacity:.1;transform:scaleX(-1)}
+#services::before{background-image:linear-gradient(135deg,rgba(47,107,243,.12),rgba(20,184,166,.08));background-position:20% 50%;opacity:.1;transform:scaleX(-1)}
 #services::after{background:linear-gradient(90deg,color-mix(in srgb,var(--bg) 78%,transparent),var(--bg) 78%)}
-#modules::before{background-image:url("../img/hero-dark.jpg");background-position:85% center;opacity:.08}
+#modules::before{background-image:linear-gradient(145deg,rgba(47,107,243,.42),rgba(13,148,136,.18));background-position:85% center;opacity:.08}
 #modules::after{background:linear-gradient(90deg,var(--bg) 12%,color-mix(in srgb,var(--bg) 88%,transparent),var(--bg) 92%)}
 [data-theme="dark"] #platform::before,[data-theme="dark"] #services::before{filter:brightness(.65) saturate(.85);opacity:.18}
 [data-theme="dark"] #lifecycle::before,[data-theme="dark"] #modules::before{opacity:.2}

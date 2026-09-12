@@ -285,3 +285,9 @@ The prototype now separates four working personas:
 - Trainee: assigned learning, calendar, assessments, certificates, progress and learning requests.
 
 The homepage login modal exposes all four demo accounts and the shared password. Each account opens a role-specific dashboard and navigation model.
+
+
+### Product-first visual redesign
+The public homepage now places a responsive application dashboard in the first viewport, with the product shell, capability analytics, heatmap, recent assessments and coaching activity rendered as HTML/CSS components. It includes an interactive nine-stage capability cycle, six L&D ecosystem workbenches, three role-specific workspaces, capability intelligence and a six-stage product tour. Existing application routes, mock services and domain logic remain unchanged.
+
+Run `python3 tools/product-site-audit.py` for public homepage checks and `node tools/smoke-test.js` for application regression checks.
