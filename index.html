@@ -6,7 +6,6 @@
 <meta name="theme-color" content="#ffffff">
 <title>GG Learning Labs — One Platform. Every L&amp;D Need.</title>
 <meta name="description" content="GG Learning Labs is a complete Learning &amp; Development management platform. Plan, design, deliver, measure and improve your entire L&amp;D ecosystem from one place.">
-
 <script>
   (function () {
     try {
@@ -16,14 +15,12 @@
     } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
   })();
 </script>
-
-<link rel="stylesheet" href="assets/css/tokens.css">
-<link rel="stylesheet" href="assets/css/base.css">
-<link rel="stylesheet" href="assets/css/components.css">
-<link rel="stylesheet" href="assets/css/charts.css">
-<link rel="stylesheet" href="assets/css/public.css">
+<link rel="stylesheet" href="assets/css/main.css">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Raleway:wght@500;600;700;800&display=swap" rel="stylesheet">
 </head>
-
 <body class="site">
 <a class="skip-link" href="#main">Skip to main content</a>
 
@@ -37,7 +34,6 @@
           <span class="tag">L&amp;D Platform</span>
         </span>
       </a>
-
       <nav class="site-nav" aria-label="Primary">
         <a href="#platform">Platform</a>
         <a href="#lifecycle">Solutions</a>
@@ -47,16 +43,15 @@
         <a href="#about">About</a>
         <a href="#support">Support</a>
       </nav>
-
       <div class="header-actions">
         <button type="button" class="btn-icon tooltip" data-theme-toggle data-tip="Theme"></button>
-        <a class="btn btn-secondary" href="login.html">Log in</a>
-        <a class="btn btn-primary" href="login.html">Get started</a>
-        <button type="button" class="btn-icon nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu"></button>
+        <a class="btn btn-secondary" href="login.html" data-open-login>Log in</a>
+        <a class="btn btn-primary" href="login.html" data-open-login>Get started</a>
+        <button type="button" class="btn-icon nav-toggle" data-nav-toggle aria-expanded="false"
+                aria-controls="mobile-nav" aria-label="Open menu"></button>
       </div>
     </div>
   </div>
-
   <div class="mobile-nav" id="mobile-nav">
     <div class="container">
       <a href="#platform">Platform</a>
@@ -67,42 +62,49 @@
       <a href="#about">About</a>
       <a href="#support">Support</a>
       <div class="btn-group">
-        <a class="btn btn-secondary" href="login.html">Log in</a>
-        <a class="btn btn-primary" href="login.html">Get started</a>
+        <a class="btn btn-secondary" href="login.html" data-open-login>Log in</a>
+        <a class="btn btn-primary" href="login.html" data-open-login>Get started</a>
       </div>
     </div>
   </div>
 </header>
 
 <main id="main">
-
   <section class="hero">
+    <div class="hero-bg" aria-hidden="true"></div>
     <div class="container">
       <div class="hero-inner">
-        <span class="eyebrow" data-icon="zap">Complete L&amp;D management platform</span>
-        <h1>One Platform.<br><span class="grad">Every L&amp;D Need.</span></h1>
+        <div class="hero-copy">
+        <span class="eyebrow" data-icon="zap">L&amp;D operating system for teams and individuals</span>
+        <h1>Build capability.<br><span class="grad">Prove learning impact.</span></h1>
         <p class="lede">
-          Plan, design, deliver, measure and improve your entire Learning &amp; Development
-          ecosystem from one place — not just another course catalogue.
+          Run the full L&amp;D cycle, from needs analysis and learning design to delivery, coaching, observation, effectiveness and evidence. Use the complete ecosystem or only the modules you need.
         </p>
         <div class="hero-cta">
           <a class="btn btn-primary btn-lg" href="#platform">Explore the platform</a>
-          <a class="btn btn-secondary btn-lg" href="login.html">Get started</a>
+          <a class="btn btn-secondary btn-lg" href="login.html" data-open-login>Get started</a>
           <button type="button" class="btn btn-ghost btn-lg" data-demo-request>Request a demo</button>
         </div>
-        <p class="hero-note">No credit card required · Prototype build with sample data</p>
-      </div>
+        <p class="hero-note">For L&amp;D teams, trainers, organisational trainees and independent upskillers</p>
 
-      <div class="mockup" aria-hidden="true">
-        <div class="mockup-bar">
-          <span class="dots"><i></i><i></i><i></i></span>
-          <span class="url">app.gglearninglabs.example / dashboard</span>
+        <div class="hero-trust">
+          <div class="item"><span class="v">25+</span><span class="k">Live modules</span></div>
+          <div class="item"><span class="v">9</span><span class="k">Lifecycle stages</span></div>
+          <div class="item"><span class="v">3</span><span class="k">Role experiences</span></div>
+          <div class="item"><span class="v">1</span><span class="k">Platform</span></div>
         </div>
-        <div class="mockup-body">
-          <div class="mockup-grid" id="mockup-stats"></div>
-          <div class="mockup-panel">
-            <div class="card card-pad"><div id="mockup-chart"></div></div>
-            <div class="card card-pad"><div id="mockup-donut"></div></div>
+        </div>
+        <div class="hero-visual" aria-label="GG Learning Labs platform preview">
+          <div class="hero-visual-card"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/img/hero-dark.jpg"><img class="hero-art" src="assets/img/hero-light.jpg" alt="Connected learning and capability pathways"></picture>
+            <div class="hero-dashboard">
+              <div class="dash-head"><span>Capability dashboard</span><span class="badge badge-success">Live</span></div>
+              <div class="dash-grid">
+                <div class="dash-stat"><b>93%</b>Effectiveness</div>
+                <div class="dash-stat"><b>88%</b>Completion</div>
+                <div class="dash-stat"><b>36</b>TOF criteria</div>
+                <div class="dash-stat"><b>28+</b>Connected modules</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -122,18 +124,18 @@
   <section class="sec sec-alt" id="platform">
     <div class="container">
       <div class="sec-head">
-        <h2>The whole lifecycle, not a fragment of it</h2>
-        <p>Most tools handle one slice of L&amp;D and leave you stitching the rest together in spreadsheets. This is the full loop.</p>
+        <h2>L&amp;D work, not just course administration</h2>
+        <p>Diagnose capability, design interventions, manage delivery, assess learning, develop people and measure transfer in one connected workflow.</p>
       </div>
       <div class="grid grid-4" id="capabilities"></div>
     </div>
   </section>
 
-  <section class="sec" id="lifecycle">
+  <section class="sec sec-wash" id="lifecycle">
     <div class="container">
       <div class="sec-head">
-        <h2>How it works</h2>
-        <p>A continuous loop — every stage feeds evidence into the next.</p>
+        <h2>The capability cycle</h2>
+        <p>Every intervention starts with a need and ends with evidence that informs the next decision.</p>
       </div>
       <div class="lifecycle" id="lifecycle-steps"></div>
     </div>
@@ -176,7 +178,7 @@
     </div>
   </section>
 
-  <section class="sec" id="services">
+  <section class="sec sec-wash" id="services">
     <div class="container">
       <div class="sec-head">
         <h2>L&amp;D services, alongside the software</h2>
@@ -192,7 +194,6 @@
         <h2>Straightforward pricing</h2>
         <p>Indicative pricing for the prototype. No payment processing is connected.</p>
       </div>
-
       <div class="pricing-toggle">
         <div class="segmented" role="group" aria-label="Billing period">
           <button type="button" data-billing="monthly" aria-pressed="true">Monthly</button>
@@ -201,9 +202,7 @@
           </button>
         </div>
       </div>
-
       <div class="price-grid" id="pricing-grid"></div>
-
       <p class="text-center text-sm text-muted mt-8">
         All plans include the public site, role-based access and standard support.
         Prices exclude applicable taxes.
@@ -246,7 +245,6 @@
           </div>
           <div id="faq"></div>
         </div>
-
         <div>
           <div class="card card-pad">
             <h3>Contact support</h3>
@@ -263,10 +261,8 @@
               <div class="field">
                 <label class="label" for="cf-topic">Topic</label>
                 <select class="select" id="cf-topic" name="topic">
-                  <option>Product demo</option>
-                  <option>Pricing</option>
-                  <option>Implementation</option>
-                  <option>Something else</option>
+                  <option>Product demo</option><option>Pricing</option>
+                  <option>Implementation</option><option>Something else</option>
                 </select>
               </div>
               <div class="field">
@@ -277,7 +273,6 @@
               <p class="hint">Mock submission — nothing is transmitted in this prototype.</p>
             </form>
           </div>
-
           <div class="card card-pad mt-4">
             <div class="row gap-3">
               <span class="stat-icon" data-icon="mail"></span>
@@ -298,10 +293,9 @@
         <h2>Ready to run L&amp;D from one platform?</h2>
         <p>Sign in with a demo account and explore the Super Admin, Admin and Learner experiences.</p>
         <div class="btn-group mt-6" style="justify-content:center">
-          <a class="btn btn-primary btn-lg" href="login.html">Get started</a>
+          <a class="btn btn-primary btn-lg" href="login.html" data-open-login>Get started</a>
           <button type="button" class="btn btn-secondary btn-lg" data-demo-request>Request a demo</button>
         </div>
-
         <div class="mt-8">
           <p class="text-sm mb-3" style="color:rgba(255,255,255,.85)">Get L&amp;D insights monthly. No noise.</p>
           <form class="newsletter-form" id="newsletter-form" novalidate>
@@ -315,7 +309,6 @@
       </div>
     </div>
   </section>
-
 </main>
 
 <footer class="site-footer">
@@ -332,65 +325,49 @@
         <p>One platform for planning, delivering, measuring and improving Learning &amp; Development.</p>
         <div class="social" id="social-links"></div>
       </div>
-
       <div class="footer-col">
         <h4>Platform</h4>
         <ul>
-          <li><a href="#platform">Overview</a></li>
-          <li><a href="#modules">Modules</a></li>
-          <li><a href="#lifecycle">Lifecycle</a></li>
-          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#platform">Overview</a></li><li><a href="#modules">Modules</a></li>
+          <li><a href="#lifecycle">Lifecycle</a></li><li><a href="#pricing">Pricing</a></li>
         </ul>
       </div>
-
       <div class="footer-col">
         <h4>Solutions</h4>
         <ul>
-          <li><a href="#platform">Training management</a></li>
-          <li><a href="#platform">Effectiveness</a></li>
-          <li><a href="#platform">Competency</a></li>
-          <li><a href="#platform">Compliance</a></li>
+          <li><a href="#platform">Training management</a></li><li><a href="#platform">Effectiveness</a></li>
+          <li><a href="#platform">Competency</a></li><li><a href="#platform">Compliance</a></li>
         </ul>
       </div>
-
       <div class="footer-col">
         <h4>Services</h4>
         <ul>
-          <li><a href="#services">Training delivery</a></li>
-          <li><a href="#services">Content development</a></li>
-          <li><a href="#services">Coaching</a></li>
-          <li><a href="#services">L&amp;D consulting</a></li>
+          <li><a href="#services">Training delivery</a></li><li><a href="#services">Content development</a></li>
+          <li><a href="#services">Coaching</a></li><li><a href="#services">L&amp;D consulting</a></li>
         </ul>
       </div>
-
       <div class="footer-col">
         <h4>Company</h4>
         <ul>
-          <li><a href="#about">About</a></li>
-          <li><a href="#support">Support</a></li>
-          <li><a href="login.html">Log in</a></li>
-          <li><a href="#support">Contact</a></li>
+          <li><a href="#about">About</a></li><li><a href="#support">Support</a></li>
+          <li><a href="login.html" data-open-login>Log in</a></li><li><a href="#support">Contact</a></li>
         </ul>
       </div>
     </div>
-
     <div class="footer-bottom">
       <span>© <span id="year"></span> GG Learning Labs. Frontend prototype — sample data only.</span>
       <nav aria-label="Legal">
-        <a href="#support">Privacy</a>
-        <a href="#support">Terms</a>
-        <a href="#support">Accessibility</a>
+        <a href="#support">Privacy</a><a href="#support">Terms</a><a href="#support">Accessibility</a>
       </nav>
     </div>
   </div>
 </footer>
 
-<script src="assets/js/core/icons.js"></script>
-<script src="assets/js/core/utils.js"></script>
-<script src="assets/js/core/config.js"></script>
-<script src="assets/js/core/theme.js"></script>
-<script src="assets/js/components/ui.js"></script>
-<script src="assets/js/components/charts.js"></script>
-<script src="assets/js/pages/home.js"></script>
+<script>window.GGL_PAGE = 'home';</script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/services.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/pages.js"></script>
 </body>
 </html>

@@ -27,7 +27,8 @@ Authentication is **mocked**. Any password of six or more characters works.
 |---|---|
 | Super Admin | `superadmin@example.com` |
 | Admin | `admin@example.com` |
-| Learner | `user@example.com` |
+| Trainer | `trainer@example.com` |
+| Trainee | `user@example.com` |
 
 The login page fills these in for you. Once signed in, switch persona from the
 sidebar user menu without logging out.
@@ -116,12 +117,21 @@ a broken screen.
 
 ## Architecture
 
-Classic scripts with a single `window.GGL` namespace — no bundler, no ES module
-CORS problems, works from `file://`. Load order is fixed in each page:
+Five JavaScript files, loaded in a fixed order, sharing one `window.GGL` namespace.
+No bundler, no ES-module CORS problems, works from `file://`.
 
 ```
-icons → utils → config → theme → ui → charts → data → services → shell → datatable → page
+core.js      icons, utilities, config, navigation registry, theme
+data.js      deterministic mock data + the two client instruments
+services.js  mock auth + domain services behind a promise interface
+ui.js        toasts, modals, dropdowns, tabs, charts, shell, data table
+pages.js     every screen, keyed by window.GGL_PAGE
 ```
+
+Each HTML page sets `window.GGL_PAGE` before loading `pages.js`; a small router at
+the bottom dispatches to the right screen. Eleven of the more uniform modules are
+declared as data and rendered by one shared runner, which keeps them consistent
+without eleven near-identical files.
 
 ### The service seam
 
@@ -148,13 +158,19 @@ with a print button.
 
 ## Design system
 
-Tokens live in `assets/css/tokens.css`. Components reference only semantic
-variables, never raw ramps. Dark mode overrides the semantic layer, so a component
-written once works in both themes.
+Tokens live at the top of `main.css`. Components reference only semantic
+variables, never raw ramps, so dark mode overrides one layer and every component
+follows.
 
-Charts are hand-rolled inline SVG — line/area, bar, donut, gauge, horizontal bars,
-sparkline. They read CSS variables, so they re-theme automatically, and carry
-`role="img"` with accessible labels.
+Charts are hand-rolled inline SVG — line/area, bar, donut, gauge, horizontal bars.
+They read CSS variables, so they re-theme automatically, and carry `role="img"`
+with accessible labels.
+
+The hero, auth panel, CTA band and learner welcome card share one abstract brand
+image (`assets/img/hero-dark.jpg`) under a dot-matrix overlay and a legibility
+scrim. Capability and lifecycle cards each carry their own gradient tone
+(`.tone-1` … `.tone-8`) so the grids read as a spectrum rather than a wall of
+identical blue tiles.
 
 The logo is a CSS placeholder (`.logo-mark`). Drop in real assets:
 
@@ -163,17 +179,16 @@ The logo is a CSS placeholder (`.logo-mark`). Drop in real assets:
 <img class="logo-dark"  src="assets/img/logo-dark.svg"  alt="GG Learning Labs">
 ```
 
-The theme swap rules already exist in `components.css`.
+The theme swap rules already exist in `main.css`.
 
 ---
 
 ## Testing
 
 ```bash
-node tools/smoke-test.js     # data integrity, utils, services, auth, grading,
-                             # certificates, points, badges, workbook arithmetic
-node tools/check-links.js    # every href, src, GGL.url(), CSS var and icon name
-python3 tools/qa.py          # real browser, 28 routes, 3 viewports
+node tools/smoke-test.js    # 97 checks: data integrity, utils, services, auth,
+                            # grading, certificates, points, badges, and the
+                            # workbook arithmetic verified to 1e-6
 ```
 
 ---
@@ -182,17 +197,18 @@ python3 tools/qa.py          # real browser, 28 routes, 3 viewports
 
 ### Built and interactive
 
-Public site · authentication · role-based shell · three dashboards · user CRUD ·
-courses · batches · calendar · attendance · assessments (graded) · certificates
-(downloadable) · gamification · Trainer Observation Form · Effectiveness
-Calculator · TNA/TNI · competencies · trainers · content library · SOPs with
-approval workflow · coaching · mentoring · requests · learning paths · newsfeed ·
-audit log · platform settings · reports with real exports.
+Public site · authentication · role-based shell · three dashboards · user CRUD
+with role-aware creation · courses · batches · calendar · attendance · assessments
+(graded, end to end) · certificates (downloadable) · gamification · Trainer
+Observation Form · Effectiveness Calculator · TNA/TNI · competencies with a
+department heatmap · trainers · content library · SOPs with approval workflow ·
+coaching · mentoring · requests · learning paths · newsfeed with image upload,
+likes and comments · audit log · platform settings · reports with real exports.
 
 ### Deliberately not built
 
-SCORM playback · assessment question authoring · real file uploads · video
-streaming · email delivery.
+SCORM playback · assessment question authoring · real file uploads to a server ·
+video streaming · email delivery.
 
 ### Known limitations
 
@@ -211,8 +227,8 @@ streaming · email delivery.
 Navigation shaping and page guards improve the experience and prevent accidents.
 They are trivially bypassable from the browser console, and they are meant to be.
 
-What this codebase does do: no secrets in source; mock authentication isolated in
-`services/authService.js` behind a clear warning; all string data escaped with
+What this codebase does do: no secrets in source; mock authentication isolated
+behind a clear warning in `services.js`; all string data escaped with
 `GGL.utils.esc()` before reaching `innerHTML`; password reset does not reveal
 whether an account exists.
 
@@ -225,12 +241,12 @@ Fine for a demo, unacceptable in production — it is the first migration item.
 
 | Today | Becomes |
 |---|---|
-| `authService.signIn()` | Provider sign-in |
+| `auth.signIn()` | Provider sign-in |
 | `collection().list(q)` | `select(...).ilike(...).order(...).range(...)` |
 | `collection().create/update/remove` | `insert` / `update` / `delete` |
 | `localStorage` overrides | Real persistence |
 | Frontend role checks | Row-level security policies |
-| `assessmentService.submitAttempt()` | Server-side grading — the key must never reach the client |
+| `assessments.submitAttempt()` | Server-side grading — the key must never reach the client |
 
 Because every component already calls services, this is a substitution rather
 than a rewrite.
@@ -238,3 +254,34 @@ than a rewrite.
 ---
 
 Frontend prototype. Sample data only. No production data is present.
+
+## September 2026 visual and module refresh
+
+- Refreshed button, icon-button, card, modal and menu styling.
+- Added a visible, responsive hero visual using the supplied project artwork.
+- Corrected theme-toggle centering and top-edge/tooltip clipping safeguards.
+- Increased dropdown and user-menu contrast in both themes.
+- Confirmed Super Admin role-aware creation of Learner, Administrator and Super Admin accounts.
+- Added interactive starter workspaces for SCORM Player, Assessment Builder and Upload Center.
+- Corrected the browser QA calculator route.
+- Included the source TOF and Trainer Effectiveness workbooks under `reference/`.
+
+## Corrective build 2
+
+- Theme initialization is now idempotent and the toggle remains centered.
+- Public homepage loads the data and service dependencies required by the sign-in modal.
+- Header, hero and footer sign-in links open a modal; `login.html` remains as a direct-route and accessibility fallback.
+- Pricing cards are forced visible and spacing has been tightened across public sections.
+- Assessment Builder, SCORM Player and Upload Center are registered in the page router.
+
+
+## Role-led L&D workflow refresh
+
+The prototype now separates four working personas:
+
+- Super Admin: platform governance, access, configuration, audit and enterprise reporting.
+- L&D Administrator: course, batch, trainer, trainee assignment and operational reporting.
+- Trainer: assigned batch delivery, attendance, assessments, progress monitoring and batch close-out.
+- Trainee: assigned learning, calendar, assessments, certificates, progress and learning requests.
+
+The homepage login modal exposes all four demo accounts and the shared password. Each account opens a role-specific dashboard and navigation model.

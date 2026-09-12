@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#ffffff">
 <title>Log in · GG Learning Labs</title>
-<meta name="description" content="Sign in to GG Learning Labs.">
 <script>
   (function () {
     try {
@@ -15,17 +14,17 @@
     } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
   })();
 </script>
-<link rel="stylesheet" href="assets/css/tokens.css">
-<link rel="stylesheet" href="assets/css/base.css">
-<link rel="stylesheet" href="assets/css/components.css">
-<link rel="stylesheet" href="assets/css/layout.css">
-<link rel="stylesheet" href="assets/css/public.css">
+<link rel="stylesheet" href="assets/css/main.css">
+<link rel="stylesheet" href="assets/css/site.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Raleway:wght@500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
 <div class="auth-wrap">
   <aside class="auth-aside">
     <a class="logo" href="index.html" style="position:relative;z-index:1">
-      <span class="logo-mark" aria-hidden="true" style="background:rgba(255,255,255,.16)">GG</span>
+      <span class="logo-mark" aria-hidden="true" style="background:rgba(255,255,255,.18)">GG</span>
       <span class="logo-text">
         <span class="name" style="color:#fff">GG Learning Labs</span>
         <span class="tag" style="color:rgba(255,255,255,.7)">L&amp;D Platform</span>
@@ -40,7 +39,6 @@
       Frontend prototype · Sample data only
     </p>
   </aside>
-
   <div class="auth-panel">
     <div class="auth-card">
       <div class="row-between mb-6">
@@ -50,11 +48,9 @@
         </a>
         <button type="button" class="btn-icon tooltip" data-theme-toggle data-tip="Theme"></button>
       </div>
-
       <h1>Welcome back</h1>
       <p class="lede">Sign in to your workspace.</p>
       <div id="login-alert" class="mb-4" hidden></div>
-
       <form id="login-form" novalidate>
         <div class="field">
           <label class="label" for="email">Email address <span class="req">*</span></label>
@@ -75,11 +71,9 @@
         </label>
         <button type="submit" class="btn btn-primary btn-block btn-lg">Sign in</button>
       </form>
-
       <p class="text-center text-sm text-muted mt-6">
         Don't have an account? <a href="#" data-create-account>Create one</a>
       </p>
-
       <div class="demo-creds">
         <h4>Demo accounts — any password of 6+ characters</h4>
         <div id="demo-list"></div>
@@ -90,20 +84,11 @@
     </div>
   </div>
 </div>
-
-<script src="assets/js/core/icons.js"></script>
-<script src="assets/js/core/utils.js"></script>
-<script src="assets/js/core/config.js"></script>
-<script src="assets/js/core/theme.js"></script>
-<script src="assets/js/components/ui.js"></script>
-<script src="assets/js/data/seed.js"></script>
-<script src="assets/js/data/users.js"></script>
-<script src="assets/js/data/catalog.js"></script>
-<script src="assets/js/data/insights.js"></script>
-<script src="assets/js/data/assessments.js"></script>
-<script src="assets/js/data/lnd.js"></script>
-<script src="assets/js/services/authService.js"></script>
-<script src="assets/js/services/dataService.js"></script>
-<script src="assets/js/pages/login.js"></script>
+<script>window.GGL_PAGE = 'login';</script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/services.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/pages.js"></script>
 </body>
 </html>
