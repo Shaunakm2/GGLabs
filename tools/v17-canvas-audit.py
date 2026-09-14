@@ -5,7 +5,7 @@ root=Path(__file__).resolve().parent.parent
 html=(root/'index.html').read_text(); css=(root/'assets/css/product-site.css').read_text(); js=(root/'assets/js/product-site.js').read_text(); soup=BeautifulSoup(html,'html.parser')
 checks=[]
 def c(name,value): checks.append((name,bool(value)))
-c('hero contains one focused canvas',bool(soup.select_one('.product-hero .hero-copy')) and bool(soup.select_one('.hero-capability-strip')))
+c('hero contains one focused canvas without invented strip',bool(soup.select_one('.product-hero .hero-copy')) and not bool(soup.select_one('.hero-capability-strip')))
 c('hero dashboard remains removed',not soup.select_one('.hero-app'))
 c('cycle section retained',bool(soup.select_one('.cycle-section .capability-orbit')))
 c('cycle has nine interactive stages',all("n:'%s'"%x in js for x in ['Diagnose','Design','Plan','Deliver','Assess','Coach','Observe','Measure','Improve']))

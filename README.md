@@ -322,3 +322,10 @@ Run `python3 tools/product-site-audit.py` for public homepage checks and `node t
 - Reflowed the GG Journal and Membership areas so all related information fits together at standard desktop viewport heights; tablet/mobile use natural height.
 - Added a frontend newsletter signup interaction with explicit prototype feedback.
 - Added footer routes for About us, Press notes, Contact, Support, Privacy, Terms and Accessibility while retaining social links.
+
+### Visual canvas correction (v18)
+- Removed the unrequested Identify / Develop / Prove strip.
+- Rebuilt the opening audience hero so Individual / Business, headline, supporting copy and actions fit inside one bounded desktop canvas.
+- Added distinct visual treatments for the hero, Capability Cycle, Journal and Membership canvases.
+- Moved Membership selectors into a dedicated grid row and removed the negative margin that clipped them.
+- Retained natural-height responsive layouts below the desktop breakpoint.
