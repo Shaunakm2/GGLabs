@@ -315,3 +315,10 @@ Run `python3 tools/product-site-audit.py` for public homepage checks and `node t
 - Removed the forced 100vh/scroll-snap behavior from the Capability Cycle section.
 - Constrained and scaled the desktop orbit while preserving visible overflow around orbit nodes.
 - Added tablet and mobile fallbacks so the orbit and inspector reflow rather than clip.
+
+### Presentation-canvas and newsletter refinement (v17)
+- Rebalanced the opening canvas with a concise Identify → Develop → Prove strip while keeping the dashboard simulation removed.
+- Rebuilt the Capability Cycle as a bounded presentation canvas with a smaller complete orbit, compact inspector and animated signal handoff from cycle to explanation.
+- Reflowed the GG Journal and Membership areas so all related information fits together at standard desktop viewport heights; tablet/mobile use natural height.
+- Added a frontend newsletter signup interaction with explicit prototype feedback.
+- Added footer routes for About us, Press notes, Contact, Support, Privacy, Terms and Accessibility while retaining social links.
