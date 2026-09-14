@@ -621,11 +621,11 @@
     U.$$('[data-signout]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         UI.confirm({ title:'Sign out?',
-          message:'You will be returned to the login page. Prototype data you have entered is kept.',
+          message:'You will be returned to the GG Learning Labs homepage. Prototype data you have entered is kept.',
           confirmLabel:'Sign out', tone:'info',
           onConfirm: function () {
             return GGL.services.auth.signOut().then(function () {
-              window.location.href = GGL.url('login.html');
+              window.location.href = GGL.url('index.html');
             });
           }});
       });
