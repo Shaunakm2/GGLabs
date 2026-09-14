@@ -443,7 +443,7 @@
       reset:false, success:'Signed in', successDesc:'Taking you to your dashboard…',
       onDone: function () {
         var next = new URLSearchParams(window.location.search).get('next');
-        var safe = next && /^[a-z0-9-]+\.html$/i.test(next) ? 'app/' + next : 'app/dashboard.html';
+        var safe = next && /^[a-z0-9-]+\.html$/i.test(next) ? 'app/' + next : 'app/launchpad.html';
         setTimeout(function () { window.location.href = GGL.url(safe); }, 420);
       },
       onError: function (err) {
@@ -1092,7 +1092,7 @@
     if (!user) { S.auth.requireAuth(); return; }
     var table = null;
 
-    if (user.role === GGL.ROLES.END_USER) {
+    if (user.role === GGL.ROLES.END_USER && user.workspaceType !== 'individual') {
       var b0 = GGL.shell.mount({ active:'observation', title:'Trainer observation',
         breadcrumbs:[{ label:'Home', href:'app/dashboard.html' }, { label:'Observation' }] });
       if (b0) b0.innerHTML = denied('Trainer observation is available to administrators and evaluators.');
@@ -1442,7 +1442,7 @@
     if (!user) { S.auth.requireAuth(); return; }
     var table = null;
 
-    if (user.role === GGL.ROLES.END_USER) {
+    if (user.role === GGL.ROLES.END_USER && user.workspaceType !== 'individual') {
       var b0 = GGL.shell.mount({ active:'effectiveness-calculator', title:'Effectiveness calculator',
         breadcrumbs:[{ label:'Home', href:'app/dashboard.html' }, { label:'Calculator' }] });
       if (b0) b0.innerHTML = denied('The effectiveness calculator is available to administrators.');
@@ -2979,7 +2979,7 @@
   P.reports = function () {
     var user = S.auth.getUser();
     if (!user) { S.auth.requireAuth(); return; }
-    if (user.role === GGL.ROLES.END_USER) {
+    if (user.role === GGL.ROLES.END_USER && user.workspaceType !== 'individual') {
       var b0 = GGL.shell.mount({ active:'reports', title:'Reports',
         breadcrumbs:[{ label:'Home', href:'app/dashboard.html' }, { label:'Reports' }] });
       if (b0) b0.innerHTML = denied('The reporting centre is available to administrators.');
@@ -4666,7 +4666,7 @@
   P.effectiveness = function () {
     var user = S.auth.getUser();
     if (!user) { S.auth.requireAuth(); return; }
-    if (user.role === GGL.ROLES.END_USER) {
+    if (user.role === GGL.ROLES.END_USER && user.workspaceType !== 'individual') {
       var b0 = GGL.shell.mount({ active:'effectiveness', title:'Training effectiveness',
         breadcrumbs:[{ label:'Home', href:'app/dashboard.html' }, { label:'Effectiveness' }] });
       if (b0) b0.innerHTML = denied('Effectiveness measurement is available to administrators.');

@@ -5,6 +5,14 @@ root=Path(__file__).resolve().parent.parent
 html=(root/'index.html').read_text();css=(root/'assets/css/product-site.css').read_text();js=(root/'assets/js/product-site.js').read_text();s=BeautifulSoup(html,'html.parser')
 checks=[]
 def check(name,ok):checks.append((name,bool(ok)))
+
+check('audience tabs',len(s.select('[data-audience]'))==2)
+check('membership variants',len(s.select('[data-purchase]'))==3 and 'One Membership' in html and 'Build Your Own' in html)
+check('GG Genie',bool(s.select_one('.gg-genie')) and 'Leadership training' in html)
+check('launchpad route',(root/'app/launchpad.html').exists() and (root/'assets/js/launchpad.js').exists())
+check('Poppins and Raleway','Poppins' in css and 'Raleway' in css)
+check('viewport storytelling','scroll-snap-type:y proximity' in css)
+
 check('single semantic H1',len(s.find_all('h1'))==1)
 check('product UI in hero',bool(s.select_one('.hero-app .app-preview-sidebar')) and len(s.select('.hero-app .metric-row article'))==4)
 check('required hero sidebar items',all(x in html for x in ['Dashboard','Capability','Learning','Assessments','Coaching','Observation','Analytics','Reports','Settings']))

@@ -291,3 +291,27 @@ The homepage login modal exposes all four demo accounts and the shared password.
 The public homepage now places a responsive application dashboard in the first viewport, with the product shell, capability analytics, heatmap, recent assessments and coaching activity rendered as HTML/CSS components. It includes an interactive nine-stage capability cycle, six L&D ecosystem workbenches, three role-specific workspaces, capability intelligence and a six-stage product tour. Existing application routes, mock services and domain logic remain unchanged.
 
 Run `python3 tools/product-site-audit.py` for public homepage checks and `node tools/smoke-test.js` for application regression checks.
+
+### Audience, Genie, membership and launchpad update (v13)
+- Added Individual and Business homepage experiences with persistent audience selection.
+- Added GG Genie, displayed once per browser session, with need-based links into relevant product areas.
+- Restored purchase experiences: One Membership, Build Your Own module access, and Business Plans. Purchase is a clearly marked front-end prototype and does not collect payment.
+- Added slide-like desktop viewport storytelling using restrained scroll snapping; mobile retains natural scrolling.
+- Added a role-aware launchpad after authentication. Module cards flip on hover/focus and open the corresponding workspace.
+- Standardised the public site and launchpad on Poppins body type and Raleway display type.
+
+### Homepage simplification and individual entitlements (v14)
+- Removed the large dashboard simulation from the first public viewport.
+- Tightened the Capability Cycle to fit as a complete desktop canvas while retaining natural mobile flow.
+- Removed the L&D ecosystem, Capability Intelligence, interactive tour and closing CTA sections.
+- Retained role workspaces and membership configuration.
+- Added a GG Journal section with four working article routes.
+- Added a purchasable-module entitlement set for Individual Upskillers and removed platform-governance-only tiles from that launchpad.
+- Individual Upskiller access now bypasses organisational learner blocks for Trainer Observation, Effectiveness Calculator, Effectiveness and Reports.
+
+### Cycle crop and role-section correction (v15)
+- Removed the public homepage section headed “One platform. Three different jobs to be done.”
+- Removed stale navigation links to the deleted workspaces section.
+- Removed the forced 100vh/scroll-snap behavior from the Capability Cycle section.
+- Constrained and scaled the desktop orbit while preserving visible overflow around orbit nodes.
+- Added tablet and mobile fallbacks so the orbit and inspector reflow rather than clip.

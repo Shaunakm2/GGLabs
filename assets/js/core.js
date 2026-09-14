@@ -425,7 +425,8 @@
     var sessionUser = session && GGL.data && GGL.data.users ? GGL.data.users.filter(function(u){return u.id===session.userId;})[0] : null;
     var individual = sessionUser && sessionUser.workspaceType === 'individual';
     if (individual) {
-      return GGL.NAV.map(function(g){ return { group:g.group, items:g.items.slice() }; })
+      var purchasable = ['Dashboard','My Learning','Training Calendar','Assessments','Certificates','Achievements','Competency','Competencies','Learning Paths','Coaching','Mentoring','TNA / TNI','Courses','Batches','Attendance','Trainers','Content Library','SCORM Player','Upload Center','Effectiveness','Trainer Observation','Effectiveness Calculator','Assessment Builder','Reports','SOPs','Requests','Newsfeed','Notifications','Settings'];
+      return GGL.NAV.map(function(g){ return { group:g.group, items:g.items.filter(function(i){ return purchasable.indexOf(i.label)!==-1; }) }; })
         .filter(function(g){ return g.items.length; });
     }
     return GGL.NAV.filter(function (g) { return !g.roles || g.roles.indexOf(role) !== -1; })
