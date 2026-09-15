@@ -559,8 +559,8 @@
   min-height: 664px;
   display: flex;
   align-items: end;
-  padding-top: 30px;
-  padding-bottom: 46px;
+  padding-top: 96px;
+  padding-bottom: 52px;
 }
 .hero-copy {
   width: min(580px, 58%);
@@ -2945,3 +2945,20 @@ button:disabled, select:disabled { cursor: not-allowed; }
   box-shadow: 0 0 0 5px rgba(255,255,255,.14);
 }
 .phase-row:hover .phase-arrow { opacity: 1; transform: translateX(7px); }
+
+/* While the mouse is over the list, only the hovered row looks chosen —
+   the previously selected row steps back so two rows never look active at once. */
+.phase-list:hover .phase-row.active:not(:hover) {
+  background: transparent;
+  padding-left: 0;
+  padding-right: 0;
+}
+.phase-list:hover .phase-row.active:not(:hover) .phase-arrow {
+  opacity: .4;
+  transform: none;
+}
+.phase-list:hover .phase-row.active:not(:hover) .phase-title,
+.phase-list:hover .phase-row.active:not(:hover) .phase-note,
+.phase-list:hover .phase-row.active:not(:hover) .phase-number {
+  color: inherit;
+}
