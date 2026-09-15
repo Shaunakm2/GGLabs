@@ -1,0 +1,43 @@
+import { useMemo, useState } from "react";
+import { ArrowRight, ArrowUpRight, Bell, Check, ChevronDown, Compass, Eye, Feather, Flame, Gauge, Lightbulb, LogOut, Menu, Moon, Search, Sun, Target, Users, WandSparkles, X, Zap } from "lucide-react";
+import { toast } from "sonner";
+import { useTheme } from "@/contexts/ThemeContext";
+import type { DemoUser } from "./Login";
+
+type DashboardProps = { user: DemoUser; onLogout: () => void };
+
+type Service = { phase: string; phaseNumber: string; title: string; description: string; type: string; accent: string; icon: typeof Compass; status: string; featured?: boolean };
+
+const services: Service[] = [
+  { phase: "Diagnose", phaseNumber: "01", title: "Training Needs Analysis", description: "A structured way to surface the gap between performance today and capability tomorrow.", type: "Toolkit", accent: "lime", icon: Compass, status: "Start here", featured: true },
+  { phase: "Diagnose", phaseNumber: "01", title: "Training Needs Identification", description: "Turn the first signal of a need into a clear, scoped learning question.", type: "Playbook", accent: "lime", icon: Compass, status: "Ready" },
+  { phase: "Design", phaseNumber: "02", title: "SOP Builder", description: "Build clear, usable standard operating procedures without starting from a blank page.", type: "Builder", accent: "lilac", icon: Feather, status: "Popular", featured: true },
+  { phase: "Plan", phaseNumber: "03", title: "Capability Roadmap", description: "Connect priorities, cohorts, milestones, and owners in one visible rhythm.", type: "Planner", accent: "coral", icon: Target, status: "Ready" },
+  { phase: "Deliver", phaseNumber: "04", title: "Personalized Coaching", description: "A focused coaching journey with prompts, practice, and reflection built in.", type: "Journey", accent: "sky", icon: Zap, status: "For you" },
+  { phase: "Assess", phaseNumber: "05", title: "Readiness Check", description: "See where capability is landing before you call the learning complete.", type: "Assessment", accent: "yellow", icon: Gauge, status: "Ready" },
+  { phase: "Coach", phaseNumber: "06", title: "Manager as Coach", description: "Small, repeatable conversations that make coaching part of the week.", type: "Practice", accent: "peach", icon: Users, status: "For teams" },
+  { phase: "Observe", phaseNumber: "07", title: "Trainer Observation", description: "Replace subjective feedback with a thoughtful, calibrated observation rhythm.", type: "Rubric", accent: "aqua", icon: Eye, status: "For teams", featured: true },
+  { phase: "Measure", phaseNumber: "08", title: "Impact Dashboard", description: "Make the signal stronger than the spreadsheet with business-aligned measures.", type: "Dashboard", accent: "lavender", icon: Flame, status: "For teams" },
+  { phase: "Improve", phaseNumber: "09", title: "Program Retrospective", description: "Close the loop with a repeatable moment to notice, learn, and improve.", type: "Workshop", accent: "green", icon: Lightbulb, status: "Ready" },
+];
+
+const accentLabels: Record<string, string> = { lime: "#c9ec62", lilac: "#d8caf2", coral: "#f1a08b", sky: "#b6d8ec", yellow: "#f7d06a", peach: "#f1c3a2", aqua: "#a9ded5", lavender: "#c7b6ea", green: "#acd27a" };
+
+export default function Dashboard({ user, onLogout }: DashboardProps) {
+  const { theme, toggleTheme } = useTheme();
+  const [activePhase, setActivePhase] = useState("All services");
+  const [search, setSearch] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const phases = ["All services", ...Array.from(new Set(services.map((service) => service.phase)))];
+  const visibleServices = useMemo(() => services.filter((service) => (activePhase === "All services" || service.phase === activePhase) && `${service.title} ${service.description} ${service.type}`.toLowerCase().includes(search.toLowerCase())), [activePhase, search]);
+
+  return (
+    <main className="dashboard-shell">
+      <header className="dashboard-header"><button className="brand-lockup" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span className="logo-mark"><span className="logo-dot logo-dot-a" /><span className="logo-dot logo-dot-b" /><span className="logo-dot logo-dot-c" /></span><span>GG Learning Labs</span></button><nav className={`dashboard-nav ${menuOpen ? "is-open" : ""}`}><span className="dashboard-breadcrumb">Your workspace</span><a href="#services">Services</a><a href="#activity">Activity</a></nav><div className="dashboard-actions"><button className="dashboard-icon-button" aria-label="Notifications" onClick={() => toast("No new notes. You’re all caught up.")}><Bell size={17} /></button><button className="theme-button dashboard-theme" onClick={toggleTheme}>{theme === "light" ? <Moon size={16} /> : <Sun size={16} />}<span>{theme === "light" ? "Night" : "Day"}</span></button><button className="profile-chip" onClick={onLogout}><span className="profile-avatar">{user.name.split(" ").map((word) => word[0]).join("")}</span><span className="profile-name">{user.name}</span><ChevronDown size={14} /></button><button className="dashboard-mobile-menu" aria-label="Toggle dashboard menu" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button></div></header>
+      <section className="dashboard-hero page-width"><div><div className="section-kicker">{user.role === "corporate" ? "Corporate L&D workspace" : "Individual practitioner workspace"}</div><h1>Good to see you,<br /><em>{user.name.split(" ")[0]}.</em></h1><p>{user.role === "corporate" ? "Your team’s L&D system, laid out so the next useful move is never buried." : "Your L&D practice, laid out so the next useful move is never buried."}</p></div><div className="dashboard-hero-art"><div className="dashboard-art-core"><WandSparkles size={25} /></div><span className="dashboard-art-orbit one" /><span className="dashboard-art-orbit two" /><span className="dashboard-art-orbit three" /></div></section>
+      <section className="dashboard-content page-width" id="services"><div className="dashboard-toolbar"><div><div className="section-kicker">Your service map</div><h2>Everything you can<br /><em>move forward with.</em></h2></div><div className="dashboard-controls"><label className="search-field"><Search size={15} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search services" /></label><div className="phase-filters">{phases.map((phase) => <button key={phase} className={activePhase === phase ? "selected" : ""} onClick={() => setActivePhase(phase)}>{phase}</button>)}</div></div></div><div className="service-grid">{visibleServices.map((service) => { const Icon = service.icon; return <article className={`service-tile ${service.accent} ${service.featured ? "featured" : ""}`} key={service.title}><div className="service-tile-top"><span className="service-number">{service.phaseNumber}</span><span className="service-type">{service.type}</span></div><div className="service-visual"><span className="service-orbit" /><span className="service-icon"><Icon size={24} /></span><span className="service-arrow"><ArrowUpRight size={17} /></span></div><div className="service-copy"><div className="service-phase">{service.phase} <span>•</span> {service.status}</div><h3>{service.title}</h3><p>{service.description}</p></div><button className="service-open" onClick={() => toast(`${service.title} is ready to explore in this demo.`)}>Open service <ArrowRight size={15} /></button></article> })}</div>{visibleServices.length === 0 && <div className="dashboard-empty"><Search size={20} /><h3>No service matched that search.</h3><button onClick={() => { setSearch(""); setActivePhase("All services"); }}>Reset filters</button></div>}</section>
+      <section className="dashboard-bottom page-width" id="activity"><div className="activity-card"><div><div className="section-kicker">A gentle nudge</div><h2>Not sure where to begin?</h2><p>Start with Diagnose. A clear learning question makes every other phase more useful.</p></div><button onClick={() => { setActivePhase("Diagnose"); document.getElementById("services")?.scrollIntoView({ behavior: "smooth" }); }}>Explore Diagnose <ArrowRight size={16} /></button></div><div className="dashboard-stats"><div><span>09</span><small>phases available</small></div><div><span>{services.length}</span><small>services in your map</small></div><div><span>01</span><small>useful next move</small></div></div></section>
+      <footer className="dashboard-footer page-width"><span>© 2026 GG Learning Labs</span><button onClick={onLogout}><LogOut size={14} /> Sign out</button></footer>
+    </main>
+  );
+}
