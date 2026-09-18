@@ -4,8 +4,8 @@
    No build step, no framework, no terminal. Open index.html and it runs.
 
    WHERE TO EDIT WHAT
-   1. CONTENT  — the lists just below (phases, news, memberships, services,
-                 defaultAccounts). This is where all the words and prices live.
+   1. CONTENT  — the lists just below (phases, news, memberships, services).
+                 This is where all the words and prices live.
    2. LOOK     — assets/styles.css
    3. LAYOUT   — index.html
    ========================================================================== */
@@ -210,13 +210,11 @@ function backendSave(key, value) {
 }
 
 async function backendSignIn(email, password) {
-  if (BACKEND === "firebase") return fbSignIn(email, password);
-  const user = await sbSignIn(email, password);
-  return { email: user.email, meta: user.user_metadata || {} };
+  return fbSignIn(email, password);
 }
 
 function backendSignUp(email, password, meta) {
-  return BACKEND === "firebase" ? fbSignUp(email, password, meta) : sbSignUp(email, password, meta);
+  return fbSignUp(email, password, meta);
 }
 
 // Saves locally first so the screen never waits, then pushes to the database.
@@ -424,12 +422,6 @@ const services = [
   { phase: "Observe", phaseNumber: "07", title: "Trainer Observation", description: "Replace subjective feedback with a thoughtful, calibrated observation rhythm.", type: "Rubric", accent: "aqua", icon: "eye", status: "For teams", featured: true },
   { phase: "Measure", phaseNumber: "08", title: "Impact Dashboard", description: "Make the signal stronger than the spreadsheet with business-aligned measures.", type: "Dashboard", accent: "lavender", icon: "flame", status: "For teams" },
   { phase: "Improve", phaseNumber: "09", title: "Program Retrospective", description: "Close the loop with a repeatable moment to notice, learn, and improve.", type: "Workshop", accent: "green", icon: "lightbulb", status: "Ready" },
-];
-
-const defaultAccounts = [
-  { email: "individual@gglabs.demo", password: "learn", name: "Aarav Mehta", role: "individual", title: "L&D practitioner" },
-  { email: "corporate@gglabs.demo", password: "build", name: "Maya Shah", role: "corporate", title: "Head of L&D" },
-  { email: "admin@gglabs.demo", password: "manage", name: "Gopi Gandhi", role: "admin", title: "Super admin" },
 ];
 
 // Which sections of the public site are switched on. The admin console edits this.
@@ -916,8 +908,6 @@ document.getElementById("back-to-top").addEventListener("click", function () {
    7. SIGN IN
    -------------------------------------------------------------------------- */
 
-let role = "individual";
-let accounts = null;   // filled in at start-up from storage or the defaults
 let brand = null;
 let content = null;
 let heroChoice = null;
@@ -947,26 +937,6 @@ function writeStore(key, value, loud) {
 const emailInput = document.getElementById("login-email");
 const passwordInput = document.getElementById("login-password");
 
-function accountFor(r) {
-  return accounts.filter(function (a) { return a.role === r; })[0] || accounts[0];
-}
-
-function fillCredentials() {
-  const a = accountFor(role);
-  emailInput.value = a.email;
-  passwordInput.value = a.password;
-}
-
-function renderRoleSwitch() {
-  Array.from(document.querySelectorAll("[data-role]")).forEach(function (btn) {
-    const on = btn.dataset.role === role;
-    btn.classList.toggle("selected", on);
-    btn.setAttribute("aria-selected", String(on));
-  });
-  document.getElementById("demo-role-label").textContent =
-    role === "individual" ? "Individual practitioner" : role === "corporate" ? "Corporate L&D team" : "Super admin";
-}
-
 function renderPasswordToggle() {
   const btn = document.getElementById("toggle-password");
   passwordInput.type = showPassword ? "text" : "password";
@@ -974,23 +944,28 @@ function renderPasswordToggle() {
   btn.innerHTML = ic(showPassword ? "eye-off" : "eye", 16);
 }
 
-Array.from(document.querySelectorAll("[data-role]")).forEach(function (btn) {
-  btn.addEventListener("click", function () {
-    role = btn.dataset.role;
-    renderRoleSwitch();
-    fillCredentials();
-  });
-});
-
 document.getElementById("toggle-password").addEventListener("click", function () {
   showPassword = !showPassword;
   renderPasswordToggle();
 });
 
-document.getElementById("use-credentials").addEventListener("click", fillCredentials);
-
-document.getElementById("forgot-password").addEventListener("click", function () {
-  toast("This is a demo — the password is shown under the form.");
+document.getElementById("forgot-password").addEventListener("click", async function () {
+  const typed = emailInput.value.trim();
+  if (!FB) { toast("Sign-in is not configured."); return; }
+  if (typed.indexOf("@") === -1) { toast("Enter your email address first."); return; }
+  try {
+    const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=" + FB.apiKey, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestType: "PASSWORD_RESET", email: typed }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data.error && data.error.message) || "Request failed");
+    toast("If that email has an account, a reset link is on its way.");
+  } catch (e) {
+    console.warn("Password reset failed:", e.message);
+    toast("Could not send the reset email. Try again in a moment.");
+  }
 });
 
 document.getElementById("login-form").addEventListener("submit", async function (event) {
@@ -998,42 +973,26 @@ document.getElementById("login-form").addEventListener("submit", async function 
   const typed = emailInput.value.trim();
   const pass = passwordInput.value;
 
-  if (BACKEND) {
-    try {
-      const account = await backendSignIn(typed, pass);
-      const meta = account.meta || {};
-      currentUser = {
-        name: meta.name || typed.split("@")[0],
-        email: account.email,
-        role: meta.role || "individual",
-        title: meta.title || "",
-      };
-      if (document.getElementById("remember-me").checked) writeStore("ggUser", currentUser);
-      renderDashboard();
-      showView("dashboard");
-      toast("Welcome back, " + currentUser.name.split(" ")[0] + ".");
-      return;
-    } catch (e) {
-      // Fall through to the built-in accounts, so the site still works while
-      // Supabase is only half set up.
-      console.warn("Sign-in failed:", e.message);
-    }
-  }
+  if (!FB) { toast("Sign-in is not configured. Add your Firebase keys in assets/backend-config.js."); return; }
+  if (!typed || !pass) { toast("Enter your email and password."); return; }
 
-  const match = accounts.filter(function (a) {
-    return a.email.toLowerCase() === typed.toLowerCase() && a.password === pass;
-  })[0];
-  if (!match) {
-    toast(BACKEND ? "That email and password were not accepted." : "For this demo, use one of the account details shown below.");
+  let account;
+  try {
+    account = await fbSignIn(typed, pass);
+  } catch (e) {
+    console.warn("Sign-in failed:", e.message);
+    toast(e.message.indexOf("TOO_MANY_ATTEMPTS") === 0
+      ? "Too many attempts. Try again later."
+      : "That email and password were not accepted.");
     return;
   }
-  const remembered = readStore("ggUser", null);
-  const sameUser = remembered && remembered.email === match.email;
+
+  const meta = account.meta || {};
   currentUser = {
-    name: (sameUser && remembered.name) || match.name,
-    email: match.email,
-    role: match.role,
-    title: (sameUser && remembered.title) || match.title || "",
+    name: meta.name || typed.split("@")[0],
+    email: account.email,
+    role: meta.role || "individual",
+    title: meta.title || "",
   };
   if (document.getElementById("remember-me").checked) writeStore("ggUser", currentUser);
   renderDashboard();
@@ -1418,23 +1377,12 @@ function adminFeatures() {
 
 function adminPeople() {
   return (
-    '<p class="admin-note">Anyone listed here can sign in. Passwords are stored in this browser only — this is a demo, not an identity system.</p>' +
-    '<div class="admin-list">' +
-    accounts
-      .map(function (a, i) {
-        return (
-          '<div class="admin-row"><div><strong>' + a.name + '</strong><span>' + a.email + " &middot; " + a.password + "</span></div>" +
-          '<span class="role-pill ' + a.role + '">' + a.role + "</span>" +
-          '<button class="icon-button" data-del-user="' + i + '" aria-label="Remove ' + a.name + '">' + ic("x", 14) + "</button></div>"
-        );
-      })
-      .join("") +
-    "</div>" +
+    '<p class="admin-note">Logins are Firebase accounts. Add one here and the person can sign in straight away. To remove or disable a login, use Firebase Console &rarr; Authentication.</p>' +
     '<div class="admin-new"><strong>Add a login</strong>' +
     '<div class="admin-grid">' +
     '<input id="nu-name" placeholder="Full name" />' +
     '<input id="nu-email" placeholder="email@company.com" />' +
-    '<input id="nu-pass" placeholder="Password" />' +
+    '<input id="nu-pass" placeholder="Password (6+ characters)" />' +
     '<div class="select-wrap"><select id="nu-role">' +
     '<option value="individual">Individual</option><option value="corporate">Corporate L&D</option><option value="admin">Super admin</option>' +
     "</select>" + ic("chevron-down", 15) + "</div></div>" +
@@ -1487,35 +1435,16 @@ modalBody.addEventListener("click", function (event) {
     return;
   }
 
-  const del = event.target.closest("[data-del-user]");
-  if (del) {
-    const i = Number(del.dataset.delUser);
-    if (accounts.length < 2) { toast("Keep at least one login."); return; }
-    if (currentUser && accounts[i].email === currentUser.email) { toast("You cannot remove the login you are using."); return; }
-    const gone = accounts.splice(i, 1)[0];
-    writeStore("ggAccounts", accounts);
-    openAdmin("people");
-    toast(gone.name + " removed.");
-    return;
-  }
-
   if (event.target.closest("[data-add-user]")) {
     const name = document.getElementById("nu-name").value.trim();
     const email = document.getElementById("nu-email").value.trim().toLowerCase();
     const pass = document.getElementById("nu-pass").value.trim();
     if (!name || email.indexOf("@") === -1 || !pass) { toast("Name, a valid email and a password, please."); return; }
-    if (accounts.some(function (a) { return a.email.toLowerCase() === email; })) { toast("That email already has a login."); return; }
+    if (!FB || !session) { toast("Sign in with Firebase to add logins."); return; }
     const newRole = document.getElementById("nu-role").value;
-    if (BACKEND) {
-      backendSignUp(email, pass, { name: name, role: newRole, title: "" })
-        .then(function () { toast(name + " can now sign in. They may need to confirm their email first."); })
-        .catch(function (err) { toast(err.message); });
-      return;
-    }
-    accounts.push({ name: name, email: email, password: pass, role: newRole, title: "" });
-    writeStore("ggAccounts", accounts);
-    openAdmin("people");
-    toast(name + " can now sign in.");
+    backendSignUp(email, pass, { name: name, role: newRole, title: "" })
+      .then(function () { toast(name + " can now sign in."); })
+      .catch(function (err) { toast(err.message); });
     return;
   }
 
@@ -1853,7 +1782,8 @@ document.addEventListener("click", function (event) {
    10. START
    -------------------------------------------------------------------------- */
 
-accounts = readStore("ggAccounts", null) || defaultAccounts.slice();
+// Clear any local logins left behind by the old demo sign-in.
+try { localStorage.removeItem("ggAccounts"); } catch (e) {}
 brand = readStore("ggBrand", {});
 content = readStore("ggContent", {});
 heroChoice = (function () { try { return localStorage.getItem("ggHero"); } catch (e) { return null; } })();
@@ -1894,8 +1824,6 @@ renderPhaseFilters();
 document.getElementById("home-menu-btn").innerHTML = ic("menu", 20);
 document.getElementById("dash-menu-btn").innerHTML = ic("menu", 20);
 renderPasswordToggle();
-renderRoleSwitch();
-fillCredentials();
 hydrateIcons(document);
 
 window.addEventListener("resize", function () {

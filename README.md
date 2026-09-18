@@ -42,20 +42,14 @@ The same three files work on Netlify Drop, Cloudflare Pages, SharePoint, or any 
 | Field-note cards and their links | `assets/app.js` | `const news` |
 | Pricing and plan features | `assets/app.js` | `const memberships` |
 | Workspace service tiles | `assets/app.js` | `const services` |
-| Demo login accounts | `assets/app.js` | `const demoAccounts` |
 | Headlines, body copy, footer | `index.html` | in place |
 | Colours, spacing, type | `assets/styles.css` | `:root` (light) and `.dark` (dark) near the top |
 
 Edit in Notepad, TextEdit, or directly in GitHub's web editor. Save, refresh the browser.
 
-## Demo accounts
+## Sign-in
 
-| Role | Email | Password |
-|---|---|---|
-| Individual | `individual@gglabs.demo` | `learn` |
-| Corporate L&D | `corporate@gglabs.demo` | `build` |
-
-Sign-in is front-end only and holds nothing in storage — it's for demonstration, not real access control.
+Sign-in uses Firebase Authentication only (email + password). Add your keys in `assets/backend-config.js` and create users in Firebase Console → Authentication — see `FIREBASE-SETUP.md`. There are no built-in accounts.
 
 ## What changed from the React version
 
