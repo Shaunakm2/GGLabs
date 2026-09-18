@@ -156,13 +156,16 @@ async function fbSignIn(email, password) {
   );
   const data = await res.json();
   if (!res.ok) throw new Error((data.error && data.error.message) || "Sign-in failed");
-  session = { token: data.idToken, uid: data.localId, email: data.email };
+  session = { token: data.idToken, uid: data.localId, email: data.email, refresh: data.refreshToken };
+  return { email: data.email, meta: await fbReadProfile(data.localId, data.idToken) };
+}
 
-  // The person's name and role live in a users document keyed by their uid.
-  let profile = {};
+// The person's name and role live in a users document keyed by their uid.
+async function fbReadProfile(uid, token) {
+  const profile = {};
   try {
-    const pr = await fetch(FS + "/users/" + data.localId + "?key=" + FB.apiKey, {
-      headers: { Authorization: "Bearer " + data.idToken },
+    const pr = await fetch(FS + "/users/" + uid + "?key=" + FB.apiKey, {
+      headers: { Authorization: "Bearer " + token },
     });
     if (pr.ok) {
       const doc = await pr.json();
@@ -173,7 +176,52 @@ async function fbSignIn(email, password) {
   } catch (e) {
     console.warn("Firebase profile read failed:", e.message);
   }
-  return { email: data.email, meta: profile };
+  return profile;
+}
+
+/* --- Keep the person signed in across page refreshes -----------------------
+   Only Firebase's refresh token is stored. "Keep me signed in" ticked ->
+   localStorage (survives closing the browser); unticked -> sessionStorage
+   (survives a refresh, ends when the tab closes). -------------------------- */
+
+const AUTH_KEY = "ggAuth";
+
+function saveAuth(remember) {
+  clearAuth();
+  try {
+    (remember ? localStorage : sessionStorage).setItem(
+      AUTH_KEY,
+      JSON.stringify({ refresh: session.refresh, email: session.email })
+    );
+  } catch (e) {}
+}
+
+function clearAuth() {
+  try { localStorage.removeItem(AUTH_KEY); } catch (e) {}
+  try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+}
+
+async function fbRestore() {
+  if (!FB) return null;
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(AUTH_KEY) || sessionStorage.getItem(AUTH_KEY) || "null");
+  } catch (e) {}
+  if (!saved || !saved.refresh) return null;
+
+  const res = await fetch("https://securetoken.googleapis.com/v1/token?key=" + FB.apiKey, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(saved.refresh),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    // A rejected token (revoked, user deleted) is dropped; a network error is not.
+    if (res.status === 400) clearAuth();
+    throw new Error((data.error && data.error.message) || "Session restore failed");
+  }
+  session = { token: data.id_token, uid: data.user_id, email: saved.email, refresh: data.refresh_token || saved.refresh };
+  return { email: saved.email, meta: await fbReadProfile(data.user_id, data.id_token) };
 }
 
 async function fbSignUp(email, password, meta) {
@@ -968,6 +1016,16 @@ document.getElementById("forgot-password").addEventListener("click", async funct
   }
 });
 
+function userFromAccount(account) {
+  const meta = account.meta || {};
+  return {
+    name: meta.name || account.email.split("@")[0],
+    email: account.email,
+    role: meta.role || "individual",
+    title: meta.title || "",
+  };
+}
+
 document.getElementById("login-form").addEventListener("submit", async function (event) {
   event.preventDefault();
   const typed = emailInput.value.trim();
@@ -987,14 +1045,8 @@ document.getElementById("login-form").addEventListener("submit", async function 
     return;
   }
 
-  const meta = account.meta || {};
-  currentUser = {
-    name: meta.name || typed.split("@")[0],
-    email: account.email,
-    role: meta.role || "individual",
-    title: meta.title || "",
-  };
-  if (document.getElementById("remember-me").checked) writeStore("ggUser", currentUser);
+  currentUser = userFromAccount(account);
+  saveAuth(document.getElementById("remember-me").checked);
   renderDashboard();
   showView("dashboard");
   toast("Welcome back, " + currentUser.name.split(" ")[0] + ".");
@@ -1172,6 +1224,7 @@ profileMenu.addEventListener("click", function (event) {
   if (action === "signout") {
     currentUser = null;
     session = null;
+    clearAuth();
     showView("home");
     toast("Signed out. See you soon.");
     return;
@@ -1825,6 +1878,15 @@ document.getElementById("home-menu-btn").innerHTML = ic("menu", 20);
 document.getElementById("dash-menu-btn").innerHTML = ic("menu", 20);
 renderPasswordToggle();
 hydrateIcons(document);
+
+fbRestore()
+  .then(function (account) {
+    if (!account) return;
+    currentUser = userFromAccount(account);
+    renderDashboard();
+    showView("dashboard");
+  })
+  .catch(function (e) { console.warn("Session restore failed:", e.message); });
 
 window.addEventListener("resize", function () {
   const shown = hoverPhase || selectedPhase;
