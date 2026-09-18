@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <meta name="theme-color" content="#f2eee7" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="description" content="GG Learning Labs — a one-stop solution to everything L&D." />
     <title>GG Learning Labs — Everything L&D, in one considered place.</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -12,12 +12,28 @@
       href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Raleway:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap"
       rel="stylesheet"
     />
+    
     <link rel="stylesheet" href="assets/styles.css" />
     <script>
       // Apply the saved theme before paint so the page never flashes the wrong colours.
       try {
         if (localStorage.getItem("theme") === "dark") document.documentElement.classList.add("dark");
       } catch (e) {}
+
+      // Pick one of the hero artworks at random and preload it.
+      // To add more: drop assets/hero-8.jpg in, add a matching
+      // "html.hero-8 .hero-art" rule in styles.css, and raise HERO_COUNT.
+      (function () {
+        var HERO_COUNT = 7;
+        var n = 1 + Math.floor(Math.random() * HERO_COUNT);
+        document.documentElement.classList.add("hero-" + n);
+        var link = document.createElement("link");
+        link.rel = "preload";
+        link.as = "image";
+        link.href = "assets/hero-" + n + ".jpg";
+        link.setAttribute("fetchpriority", "high");
+        document.head.appendChild(link);
+      })();
     </script>
   </head>
   <body>
@@ -57,38 +73,38 @@
         <div class="grain-overlay" aria-hidden="true"></div>
         <div class="hero-inner page-width">
           <div class="hero-copy reveal-up">
-            <div class="eyebrow"><span class="eyebrow-line"></span> L&amp;D, without the spreadsheet sprawl</div>
-            <h1>Everything L&amp;D.<br /><em>In one considered place.</em></h1>
-            <p class="hero-lede">
+            <div class="eyebrow"><span class="eyebrow-line"></span> <span data-cms="hero.eyebrow">L&amp;D, without the spreadsheet sprawl</span></div>
+            <h1><span data-cms="hero.title1">Everything L&amp;D.</span><br /><em data-cms="hero.title2">In one considered place.</em></h1>
+            <p class="hero-lede" data-cms="hero.lede">
               GG Learning Labs is a practical operating system for people who make learning happen—from the first signal
               of a need to the proof that something changed.
             </p>
             <div class="hero-actions">
-              <button class="primary-button" data-scroll="membership">Explore the lab <i data-i="arrow-right" data-s="17"></i></button>
+              <button class="primary-button" data-scroll="membership"><span data-cms="hero.cta">Explore the lab</span> <i data-i="arrow-right" data-s="17"></i></button>
               <button class="text-button" data-scroll="system">
-                <span class="play-icon"><i data-i="play" data-s="12" data-fill="currentColor"></i></span> See how it works
+                <span class="play-icon"><i data-i="play" data-s="12" data-fill="currentColor"></i></span> <span data-cms="hero.cta2">See how it works</span>
               </button>
             </div>
-            <div class="hero-footnote"><span class="tiny-orbit"></span> Built for individual practitioners and L&amp;D teams</div>
+            <div class="hero-footnote"><span class="tiny-orbit"></span> <span data-cms="hero.footnote">Built for individual practitioners and L&amp;D teams</span></div>
           </div>
         </div>
       </section>
 
       <section class="intro-section page-width">
         <div class="intro-copy">
-          <div class="section-kicker">The premise</div>
-          <h2>Good L&amp;D is a <span>system</span>,<br />not a string of events.</h2>
+          <div class="section-kicker" data-cms="premise.kicker">The premise</div>
+          <h2><span data-cms="premise.title1">Good L&amp;D is a </span><span data-cms="premise.title2">system</span><span data-cms="premise.title3">,</span><br /><span data-cms="premise.title4">not a string of events.</span></h2>
         </div>
         <div class="intro-body">
-          <p>
+          <p data-cms="premise.body1">
             Diagnose the real need. Design the right intervention. Deliver it with care. Observe what happens next. Then
             make the next version better.
           </p>
-          <p>
+          <p data-cms="premise.body2">
             We’re creating the layer between L&amp;D intent and L&amp;D impact—so the work feels less like admin, and more
             like progress.
           </p>
-          <button class="arrow-link" data-scroll="system">Explore the phases <i data-i="arrow-up-right" data-s="16"></i></button>
+          <button class="arrow-link" data-scroll="system"><span data-cms="premise.link">Explore the phases</span> <i data-i="arrow-up-right" data-s="16"></i></button>
         </div>
       </section>
 
@@ -96,18 +112,19 @@
         <div class="page-width">
           <div class="section-heading-row">
             <div>
-              <div class="section-kicker">The L&amp;D operating system</div>
-              <h2>From first question<br /><em>to lasting change.</em></h2>
+              <div class="section-kicker" data-cms="system.kicker">The L&amp;D operating system</div>
+              <h2><span data-cms="system.title1">From first question</span><br /><em data-cms="system.title2">to lasting change.</em></h2>
             </div>
-            <p>
+            <p data-cms="system.lede">
               Choose a phase to see the kinds of practical services that live inside it. This is the part that makes GG
               Learning Labs more than another LMS.
             </p>
           </div>
-          <div class="system-layout">
-            <!-- Phase rows are generated from the `phases` list in assets/app.js -->
-            <div class="phase-list" id="phase-list"></div>
-            <aside class="phase-detail" id="phase-detail"></aside>
+          <!-- The nine phases as a timeline. Hovering a node opens the popdown below it. -->
+          <div class="timeline" id="phase-timeline">
+            <div class="timeline-rail" aria-hidden="true"></div>
+            <div class="timeline-nodes" id="timeline-nodes" role="tablist" aria-label="The nine phases"></div>
+            <div class="timeline-pop" id="timeline-pop"></div>
           </div>
         </div>
       </section>
@@ -115,12 +132,12 @@
       <section class="membership-section" id="membership">
         <div class="page-width">
           <div class="membership-top">
-            <div><div class="section-kicker">Choose your way in</div><h2>A membership that<br /><em>meets the moment.</em></h2></div>
+            <div><div class="section-kicker" data-cms="plans.kicker">Choose your way in</div><h2><span data-cms="plans.title1">A membership that</span><br /><em data-cms="plans.title2">meets the moment.</em></h2></div>
             <div class="audience-switch-wrap">
-              <span class="audience-label">I’m here as</span>
+              <span class="audience-label" data-cms="plans.toggleLabel">I’m here as</span>
               <div class="audience-switch" role="tablist" aria-label="Choose your audience">
-                <button class="selected" data-audience="individual" role="tab" aria-selected="true">An individual</button>
-                <button data-audience="corporate" role="tab" aria-selected="false">A company</button>
+                <button class="selected" data-audience="individual" role="tab" aria-selected="true"><span data-cms="plans.audience1">An individual</span></button>
+                <button data-audience="corporate" role="tab" aria-selected="false"><span data-cms="plans.audience2">A company</span></button>
               </div>
               <p id="audience-note">For practitioners building the practice.</p>
             </div>
@@ -136,12 +153,12 @@
 
       <section class="signal-section page-width" id="signal">
         <div class="signal-header">
-          <div><div class="section-kicker">Signal / Field notes</div><h2>Useful things<br /><em>worth keeping.</em></h2></div>
-          <p>Reading the room, so your L&amp;D practice can respond to what’s actually changing.</p>
+          <div><div class="section-kicker" data-cms="notes.kicker">Signal / Field notes</div><h2><span data-cms="notes.title1">Useful things</span><br /><em data-cms="notes.title2">worth keeping.</em></h2></div>
+          <p data-cms="notes.lede">Reading the room, so your L&amp;D practice can respond to what’s actually changing.</p>
         </div>
         <!-- News cards are generated from the `news` list in assets/app.js -->
         <div class="news-grid" id="news-grid"></div>
-        <div class="source-disclaimer">
+        <div class="source-disclaimer" data-cms="notes.disclaimer">
           Placeholder editorial cards sourced from public L&amp;D research and field writing. Follow the links for the full
           original pieces.
         </div>
@@ -149,19 +166,19 @@
 
       <section class="newsletter-section page-width" id="contact">
         <div class="newsletter-copy">
-          <div class="section-kicker">The lab notes</div>
-          <h2>Make room for<br /><em>a better question.</em></h2>
-          <p>One thoughtful note every few weeks on L&amp;D systems, practice, and the small moves that compound.</p>
+          <div class="section-kicker" data-cms="news.kicker">The lab notes</div>
+          <h2><span data-cms="news.title1">Make room for</span><br /><em data-cms="news.title2">a better question.</em></h2>
+          <p data-cms="news.lede">One thoughtful note every few weeks on L&amp;D systems, practice, and the small moves that compound.</p>
         </div>
         <div class="newsletter-form-wrap">
           <div class="mail-symbol"><i data-i="mail" data-s="21"></i></div>
           <form class="newsletter-form" id="newsletter-form">
-            <label for="newsletter-email">Your email, if you’re into that sort of thing</label>
+            <label for="newsletter-email" data-cms="news.label">Your email, if you’re into that sort of thing</label>
             <div class="newsletter-input-row">
               <input id="newsletter-email" placeholder="you@somewhere-good.com" type="email" />
               <button type="submit" aria-label="Sign up for newsletter"><i data-i="arrow-up-right" data-s="18"></i></button>
             </div>
-            <div class="form-note" id="newsletter-note">No noise. Unsubscribe whenever.</div>
+            <div class="form-note" id="newsletter-note" data-cms="news.note">No noise. Unsubscribe whenever.</div>
           </form>
         </div>
       </section>
@@ -178,7 +195,7 @@
                 </span>
                 <span>GG Learning Labs</span>
               </button>
-              <p>One stop solution to everything L&amp;D.<br />Thoughtfully, practically, together.</p>
+              <p><span data-cms="footer.tagline1">One stop solution to everything L&amp;D.</span><br /><span data-cms="footer.tagline2">Thoughtfully, practically, together.</span></p>
             </div>
             <div class="footer-column">
               <span>Explore</span>
@@ -200,8 +217,8 @@
             </div>
           </div>
           <div class="footer-bottom">
-            <span>© 2026 GG Learning Labs</span>
-            <span>Made for the people who make learning matter.</span>
+            <span data-cms="footer.copyright">© 2026 GG Learning Labs</span>
+            <span data-cms="footer.line">Made for the people who make learning matter.</span>
             <button id="back-to-top">Back to top <i data-i="arrow-up-right" data-s="14"></i></button>
           </div>
         </div>
@@ -226,8 +243,8 @@
                 <stop offset="0" stop-color="#6fbdb1"/><stop offset=".45" stop-color="#2f7570"/><stop offset="1" stop-color="#123f3c"/>
               </linearGradient>
               <linearGradient id="gg-vapor" x1=".45" y1="0" x2=".6" y2="1">
-                <stop offset="0" stop-color="#6fbdb1" stop-opacity=".95"/>
-                <stop offset=".35" stop-color="#9db6df" stop-opacity=".72"/>
+                <stop offset="0" stop-color="#7cc7bb" stop-opacity="1"/>
+                <stop offset=".34" stop-color="#a3bce6" stop-opacity=".82"/><stop offset=".68" stop-color="#c7bdee" stop-opacity=".42"/>
                 <stop offset="1" stop-color="#d8caf2" stop-opacity=".08"/>
               </linearGradient>
               <linearGradient id="gg-turban" x1=".15" y1="0" x2=".8" y2="1">
@@ -258,6 +275,7 @@
               </g>
               <g class="genie-float">
                 <path d="M57 114h44c3 22 17 31 13 45-3 10-12 12-14 12-4-16 3-24-7-33-10-10-25-7-33-15-4-4-5-7-3-9z" fill="url(#gg-vapor)" filter="url(#gg-blur08)"/>
+                <path d="M64 120c6 14 4 24 12 33" fill="none" stroke="#bfb2e6" stroke-width="3" opacity=".3" stroke-linecap="round" filter="url(#gg-blur08)"/>
                 <path d="M70 122c3 11 11 17 13 28" stroke="#eefaf6" stroke-width="1.5" fill="none" opacity=".3" filter="url(#gg-blur08)"/>
                 <path d="M79 80C95 80 107 88 110 98c-3 8-6 15-9 20H57c-3-5-6-12-9-20 3-10 15-18 31-18z" fill="url(#gg-torsoG)"/>
                 <g clip-path="url(#gg-torsoClip)">
@@ -266,17 +284,17 @@
                 <path d="M66 86c7 7 21 7 27 0-3 9-24 10-27 0z" fill="#1d5652" opacity=".28"/>
                 </g>
                 <g>
-                  <ellipse cx="53" cy="98" rx="10" ry="9" fill="url(#gg-skinArm)"/>
-                  <ellipse cx="105" cy="97" rx="10" ry="9" fill="url(#gg-skinArm)"/>
-                  <rect x="54" y="95" width="48" height="17" rx="8.5" transform="rotate(6 78 103.5)" fill="url(#gg-skinArm)"/>
+                  <ellipse cx="54" cy="98" rx="9" ry="8.4" fill="url(#gg-skinArm)"/>
+                  <ellipse cx="104" cy="97" rx="9" ry="8.4" fill="url(#gg-skinArm)"/>
+                  <rect x="54" y="96" width="48" height="14" rx="7" transform="rotate(6 78 103)" fill="url(#gg-skinArm)"/>
                   <path d="M59 98h38" stroke="#e8faf5" stroke-width="3" stroke-linecap="round" opacity=".42" transform="rotate(6 78 103.5)"/>
-                  <ellipse cx="101" cy="101" rx="9.5" ry="8.5" transform="rotate(12 101 101)" fill="url(#gg-skinArm)"/>
+                  <ellipse cx="100" cy="101" rx="8" ry="7.2" transform="rotate(12 100 101)" fill="url(#gg-skinArm)"/>
                   <path d="M96 97c3-2 7-2 10 1-4-2-7-2-10 1z" fill="#eafbf6" opacity=".6"/>
                   <path d="M97 103c4 2 8 2 11 0" stroke="#12403d" stroke-width="1.3" fill="none" opacity=".3"/>
-                  <rect x="56" y="104" width="48" height="16" rx="8" transform="rotate(-5 78 112)" fill="url(#gg-skinArm)"/>
+                  <rect x="56" y="105" width="48" height="13" rx="6.5" transform="rotate(-5 78 111.5)" fill="url(#gg-skinArm)"/>
                   <path d="M54 110c12 5 38 5 50-2" stroke="#12403d" stroke-width="2.4" fill="none" opacity=".22" filter="url(#gg-blur08)"/>
                   <path d="M61 107h38" stroke="#e8faf5" stroke-width="2.6" stroke-linecap="round" opacity=".35" transform="rotate(-5 78 112)"/>
-                  <ellipse cx="59" cy="112" rx="9" ry="8" transform="rotate(-12 59 112)" fill="url(#gg-skinArm)"/>
+                  <ellipse cx="60" cy="111" rx="7.6" ry="6.9" transform="rotate(-12 60 111)" fill="url(#gg-skinArm)"/>
                   <path d="M54 108c3-2 7-2 10 1-4-2-7-2-10 1z" fill="#eafbf6" opacity=".6"/>
                   <path d="M55 114c4 2 8 2 11 0" stroke="#12403d" stroke-width="1.3" fill="none" opacity=".3"/>
                 </g>
@@ -296,25 +314,29 @@
                 <path d="M59 49c-2 8 0 14 3 19-4-5-5-12-3-19z" fill="#cdeee5" opacity=".35"/>
                 <path d="M67 43c4-3 9-3 12 1" stroke="#1d5652" stroke-width="2.4" fill="none" stroke-linecap="round"/>
                 <path d="M79 44c3-4 8-4 12-1" stroke="#1d5652" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-                <ellipse cx="72" cy="51" rx="4.6" ry="3.6" fill="#f6fcfa"/>
-                <ellipse cx="86" cy="51" rx="4.6" ry="3.6" fill="#f6fcfa"/>
-                <circle cx="72.6" cy="51.4" r="2.3" fill="#17243b"/>
-                <circle cx="86.6" cy="51.4" r="2.3" fill="#17243b"/>
-                <circle cx="73.5" cy="50.3" r=".85" fill="#fff"/>
-                <circle cx="87.5" cy="50.3" r=".85" fill="#fff"/>
+                <path d="M66.6 51.2c2-4.6 9.6-4.6 11.6 0-2 4-9.6 4-11.6 0z" fill="#f6fcfa"/>
+                <path d="M80.6 51.2c2-4.6 9.6-4.6 11.6 0-2 4-9.6 4-11.6 0z" fill="#f6fcfa"/>
+                <circle cx="72.6" cy="51.2" r="2.5" fill="#2e6f7d"/>
+                <circle cx="86.6" cy="51.2" r="2.5" fill="#2e6f7d"/>
+                <circle cx="72.6" cy="51.2" r="1.25" fill="#0f2430"/>
+                <circle cx="86.6" cy="51.2" r="1.25" fill="#0f2430"/>
+                <circle cx="73.6" cy="50.1" r=".85" fill="#fff"/>
+                <circle cx="87.6" cy="50.1" r=".85" fill="#fff"/>
+                <path d="M66.6 51.2c2-4.6 9.6-4.6 11.6 0" fill="none" stroke="#1d5652" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M80.6 51.2c2-4.6 9.6-4.6 11.6 0" fill="none" stroke="#1d5652" stroke-width="1.5" stroke-linecap="round"/>
                 <path d="M79 52c2 4 3 6 2 7-1 1-3 1-4 0" stroke="#27625d" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".75"/>
                 <path d="M79 62c-6-5-14-4-16 2 6-2 12-1 16 3 4-4 10-5 16-3-2-6-10-7-16-2z" fill="#0f3b38"/>
                 <path d="M65 64c4-2 9-1 12 2-4-2-8-3-12-2z" fill="#6fbdb1" opacity=".4"/>
                 <path d="M74 69c3 2 7 2 10 0" stroke="#0b2f2d" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".6"/>
-                <path d="M51 42c-4-23 11-38 28-38s32 15 28 38c-7-10-17-15-28-15s-21 5-28 15z" fill="url(#gg-turban)"/>
-                <path d="M56 30c4-13 13-20 22-20-7 4-15 9-19 22z" fill="#f6fde2" opacity=".6"/>
-                <path d="M51 40c7-10 17-15 28-15s21 5 28 15c0 3-1 5-2 6-7-9-16-14-26-14s-19 5-26 14c-1-1-2-3-2-6z" fill="url(#gg-turban2)"/>
-                <path d="M56 37c6-6 14-9 23-9 8 0 16 3 22 8-6-3-13-5-22-5-8 0-17 2-23 6z" fill="#264b12" opacity=".2"/>
-                <path d="M62 20c5-6 11-9 17-9" stroke="#f9ffec" stroke-width="1.6" fill="none" opacity=".5" stroke-linecap="round"/>
-                <ellipse cx="79" cy="8" rx="6" ry="4.6" fill="url(#gg-turban2)"/>
-                <ellipse cx="77.4" cy="6.8" rx="2.2" ry="1.5" fill="#f9ffec" opacity=".7"/>
-                <circle cx="79" cy="33" r="5.4" fill="url(#gg-jewelG)"/>
-                <circle cx="77.2" cy="31.2" r="1.7" fill="#fff" opacity=".85"/>
+                <path d="M49 45c-3-19 12-31 30-31s33 12 30 31c-8-9-18-14-30-14s-22 5-30 14z" fill="url(#gg-turban)"/>
+                <path d="M55 33c4-11 12-17 20-17-6 4-13 8-16 19z" fill="#f6fde2" opacity=".6"/>
+                <path d="M49 43c8-9 18-14 30-14s22 5 30 14c0 3-1 5-2 6-8-8-17-13-28-13s-20 5-28 13c-1-1-2-3-2-6z" fill="url(#gg-turban2)"/>
+                <path d="M54 40c7-6 15-9 25-9 9 0 17 3 24 8-7-3-14-5-24-5-9 0-18 2-25 6z" fill="#264b12" opacity=".2"/>
+                <path d="M60 27c5-6 11-9 18-10" stroke="#f9ffec" stroke-width="1.6" fill="none" opacity=".45" stroke-linecap="round"/>
+                <ellipse cx="105" cy="36" rx="6.4" ry="5.4" transform="rotate(18 105 36)" fill="url(#gg-turban2)"/>
+                <ellipse cx="103.4" cy="34.4" rx="2.4" ry="1.6" transform="rotate(18 103.4 34.4)" fill="#f9ffec" opacity=".6"/>
+                <circle cx="79" cy="38" r="5" fill="url(#gg-jewelG)"/>
+                <circle cx="77.4" cy="36.4" r="1.6" fill="#fff" opacity=".85"/>
                 <path d="M59 42c-2 9 0 18 5 25" stroke="#dcf7f0" stroke-width="1.8" fill="none" opacity=".45" filter="url(#gg-blur08)"/>
                 <path d="M45 96c-1 6 0 12 2 16" stroke="#dcf7f0" stroke-width="1.6" fill="none" opacity=".3" filter="url(#gg-blur08)"/>
               </g>
@@ -377,8 +399,7 @@
             <path d="M43 81h46c2 0 3 1 3 2.2S91 85 89 85H43c-2 0-3-.8-3-1.8S41 81 43 81z" fill="url(#gg-brassTop)"/>
             <path d="M44 82h44c1 0 1 .4 1 .7H43c0-.3 0-.7 1-.7z" fill="#fff0dd" opacity=".55"/>
           </svg>
-          <span class="genie-label">Rub the lamp</span>
-        </button>
+          </button>
       </div>
     </main>
 
@@ -405,8 +426,8 @@
       </header>
       <div class="auth-layout page-width">
         <section class="auth-intro">
-          <div class="section-kicker">Your L&amp;D workspace</div>
-          <h1>Make the next<br /><em>useful move.</em></h1>
+          <div class="section-kicker" data-cms="auth.kicker">Your L&amp;D workspace</div>
+          <h1><span data-cms="auth.title1">Make the next</span><br /><em data-cms="auth.title2">useful move.</em></h1>
           <p>
             Sign in to see your services, working notes, and the practical tools waiting inside your GG Learning Labs
             space.
@@ -419,12 +440,13 @@
         </section>
         <section class="auth-card">
           <div class="auth-card-top">
-            <div><div class="card-eyebrow">Welcome back</div><h2>Sign in to your lab</h2></div>
+            <div><div class="card-eyebrow">Welcome back</div><h2 data-cms="auth.cardTitle">Sign in to your lab</h2></div>
             <span class="auth-badge">DEMO</span>
           </div>
           <div class="role-switch" role="tablist" aria-label="Choose account type">
             <button class="selected" data-role="individual" role="tab" aria-selected="true">Individual</button>
             <button data-role="corporate" role="tab" aria-selected="false">Corporate L&amp;D</button>
+            <button data-role="admin" role="tab" aria-selected="false">Admin</button>
           </div>
           <form class="auth-form" id="login-form">
             <label for="login-email">Email address</label>
@@ -433,6 +455,14 @@
             <div class="password-wrap">
               <input id="login-password" type="password" autocomplete="current-password" />
               <button type="button" id="toggle-password" aria-label="Show password"></button>
+            </div>
+            <div class="auth-form-row">
+              <label class="checkbox-field" for="remember-me">
+                <input type="checkbox" id="remember-me" />
+                <span class="checkbox-box"><i data-i="check" data-s="11"></i></span>
+                Keep me signed in
+              </label>
+              <button type="button" class="text-link" id="forgot-password">Forgot password?</button>
             </div>
             <button class="auth-submit" type="submit">Enter the lab <i data-i="arrow-right" data-s="17"></i></button>
           </form>
@@ -467,11 +497,25 @@
         <div class="dashboard-actions">
           <button class="dashboard-icon-button" id="dash-bell" aria-label="Notifications"><i data-i="bell" data-s="17"></i></button>
           <button class="theme-button dashboard-theme" data-theme-btn></button>
-          <button class="profile-chip" data-goto="home">
-            <span class="profile-avatar" id="profile-avatar"></span>
-            <span class="profile-name" id="profile-name"></span>
-            <i data-i="chevron-down" data-s="14"></i>
-          </button>
+          <div class="profile-wrap">
+            <button class="profile-chip" id="profile-chip" aria-haspopup="menu" aria-expanded="false">
+              <span class="profile-avatar" id="profile-avatar"></span>
+              <span class="profile-name" id="profile-name"></span>
+              <i data-i="chevron-down" data-s="14"></i>
+            </button>
+            <div class="profile-menu" id="profile-menu" role="menu" hidden>
+              <div class="profile-menu-head">
+                <span class="profile-avatar" id="menu-avatar"></span>
+                <div><strong id="menu-name"></strong><span id="menu-email"></span></div>
+              </div>
+              <button role="menuitem" data-user-action="profile"><i data-i="user" data-s="15"></i> Your profile</button>
+              <button role="menuitem" data-user-action="prefs"><i data-i="settings" data-s="15"></i> Preferences</button>
+              <button role="menuitem" data-user-action="admin" id="admin-item" hidden><i data-i="shield" data-s="15"></i> Admin console</button>
+              <button role="menuitem" data-user-action="theme"><i data-i="moon" data-s="15"></i> <span id="menu-theme-label">Switch theme</span></button>
+              <div class="profile-menu-rule"></div>
+              <button role="menuitem" data-user-action="signout" class="danger"><i data-i="log-out" data-s="15"></i> Sign out</button>
+            </div>
+          </div>
           <button class="dashboard-mobile-menu" id="dash-menu-btn" aria-label="Toggle dashboard menu"></button>
         </div>
       </header>
@@ -528,9 +572,21 @@
       </footer>
     </main>
 
+    <!-- Profile / preferences dialog -->
+    <div class="modal-veil" id="modal-veil" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-top">
+          <div><span class="card-eyebrow" id="modal-eyebrow"></span><h2 id="modal-title"></h2></div>
+          <button id="modal-close" aria-label="Close"><i data-i="x" data-s="16"></i></button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+
     <!-- Toast notifications -->
     <ol class="gg-toaster" id="gg-toaster" aria-live="polite"></ol>
 
+    <script src="assets/backend-config.js"></script>
     <script src="assets/app.js"></script>
   </body>
 </html>
