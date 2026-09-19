@@ -132,9 +132,10 @@ async function fbLoadConfig() {
 
 async function fbSaveConfig(key, value) {
   try {
+    const token = await fbEnsureToken();
     const res = await fetch(FS + "/site_config/" + key + "?key=" + FB.apiKey, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
       body: JSON.stringify({ fields: { value: { stringValue: JSON.stringify(value) } } }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -156,8 +157,14 @@ async function fbSignIn(email, password) {
   );
   const data = await res.json();
   if (!res.ok) throw new Error((data.error && data.error.message) || "Sign-in failed");
-  session = { token: data.idToken, uid: data.localId, email: data.email, refresh: data.refreshToken };
-  return { email: data.email, meta: await fbReadProfile(data.localId, data.idToken) };
+  session = {
+    token: data.idToken, uid: data.localId, email: data.email, refresh: data.refreshToken,
+    exp: Date.now() + Number(data.expiresIn || 3600) * 1000,
+  };
+  const profile = await fbReadProfile(data.localId, data.idToken);
+  if (profile === null) { session = null; throw new Error("NO_PROFILE"); }
+  if (profile.active === "false") { session = null; throw new Error("ACCESS_DISABLED"); }
+  return { email: data.email, meta: profile };
 }
 
 // The person's name and role live in a users document keyed by their uid.
@@ -167,6 +174,7 @@ async function fbReadProfile(uid, token) {
     const pr = await fetch(FS + "/users/" + uid + "?key=" + FB.apiKey, {
       headers: { Authorization: "Bearer " + token },
     });
+    if (pr.status === 404) return null; // no users document: this person has not been added
     if (pr.ok) {
       const doc = await pr.json();
       Object.keys(doc.fields || {}).forEach(function (k) {
@@ -220,31 +228,213 @@ async function fbRestore() {
     if (res.status === 400) clearAuth();
     throw new Error((data.error && data.error.message) || "Session restore failed");
   }
-  session = { token: data.id_token, uid: data.user_id, email: saved.email, refresh: data.refresh_token || saved.refresh };
-  return { email: saved.email, meta: await fbReadProfile(data.user_id, data.id_token) };
+  session = {
+    token: data.id_token, uid: data.user_id, email: saved.email, refresh: data.refresh_token || saved.refresh,
+    exp: Date.now() + Number(data.expires_in || 3600) * 1000,
+  };
+  const profile = await fbReadProfile(data.user_id, data.id_token);
+  if (profile === null || profile.active === "false") { session = null; clearAuth(); return null; }
+  return { email: saved.email, meta: profile };
+}
+
+// A valid token for the signed-in person; renews it when it is about to expire.
+async function fbEnsureToken() {
+  if (!session) throw new Error("Not signed in. Please sign in again.");
+  if (session.exp && Date.now() < session.exp - 60000) return session.token;
+  const res = await fetch("https://securetoken.googleapis.com/v1/token?key=" + FB.apiKey, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(session.refresh),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error("Your session expired. Please sign in again.");
+  session.token = data.id_token;
+  session.refresh = data.refresh_token || session.refresh;
+  session.exp = Date.now() + Number(data.expires_in || 3600) * 1000;
+  return session.token;
+}
+
+// Every document in a collection, as { id, fields } with string fields. Needs the right Firestore rules.
+async function fbList(collection) {
+  const token = await fbEnsureToken();
+  const out = [];
+  let pageToken = "";
+  do {
+    const res = await fetch(
+      FS + "/" + collection + "?pageSize=300" + (pageToken ? "&pageToken=" + encodeURIComponent(pageToken) : "") + "&key=" + FB.apiKey,
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    (data.documents || []).forEach(function (doc) {
+      const fields = {};
+      Object.keys(doc.fields || {}).forEach(function (k) { fields[k] = doc.fields[k].stringValue; });
+      out.push({ id: doc.name.split("/").pop(), fields: fields });
+    });
+    pageToken = data.nextPageToken || "";
+  } while (pageToken);
+  return out;
+}
+
+async function fbDelete(collection, id) {
+  const token = await fbEnsureToken();
+  const res = await fetch(FS + "/" + collection + "/" + id + "?key=" + FB.apiKey, {
+    method: "DELETE",
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+}
+
+// Change only the named fields of a login (name, title, role, active, tools, scoring).
+async function fbUpdateUser(uid, fields) {
+  const token = await fbEnsureToken();
+  const keys = Object.keys(fields);
+  const body = { fields: {} };
+  keys.forEach(function (k) { body.fields[k] = { stringValue: String(fields[k]) }; });
+  const mask = keys.map(function (k) { return "updateMask.fieldPaths=" + encodeURIComponent(k); }).join("&");
+  const res = await fetch(FS + "/users/" + uid + "?" + mask + "&key=" + FB.apiKey, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+}
+
+/* Reports: every saved Trainer Observation Form / Trainer Effectiveness result is a document in Firestore
+   `reports`, tagged with the signed-in person's uid. `payload` is the JSON needed to rebuild the PDF. */
+function reportFromDoc(doc) {
+  const rec = { id: doc.name.split("/").pop() };
+  Object.keys(doc.fields || {}).forEach(function (k) { rec[k] = doc.fields[k].stringValue; });
+  return rec;
+}
+
+function newestFirst(a, b) { return String(b.createdAt || "").localeCompare(String(a.createdAt || "")); }
+
+async function fbSaveReport(rec) {
+  if (!FB || !session) throw new Error("Not signed in");
+  const token = await fbEnsureToken();
+  const fields = {
+    uid: session.uid,
+    name: rec.name || "",
+    email: session.email || "",
+    type: rec.type,
+    title: rec.title || "",
+    score: rec.score || "",
+    createdAt: new Date().toISOString(),
+    payload: rec.payload,
+  };
+  const body = { fields: {} };
+  Object.keys(fields).forEach(function (k) { body.fields[k] = { stringValue: String(fields[k]) }; });
+  const res = await fetch(FS + "/reports?key=" + FB.apiKey, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return reportFromDoc(await res.json());
+}
+
+// The signed-in person's own reports (a filtered query, so the rules can let them read just these).
+async function fbMyReports() {
+  if (!FB || !session) throw new Error("Not signed in");
+  const token = await fbEnsureToken();
+  const res = await fetch(FS + ":runQuery?key=" + FB.apiKey, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ structuredQuery: {
+      from: [{ collectionId: "reports" }],
+      where: { fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: session.uid } } },
+      limit: 500,
+    } }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const rows = await res.json();
+  return rows.filter(function (r) { return r.document; }).map(function (r) { return reportFromDoc(r.document); }).sort(newestFirst);
+}
+
+async function fbAllReports() {
+  const token = await fbEnsureToken();
+  const out = [];
+  let pageToken = "";
+  do {
+    const res = await fetch(FS + "/reports?pageSize=300" + (pageToken ? "&pageToken=" + encodeURIComponent(pageToken) : "") + "&key=" + FB.apiKey,
+      { headers: { Authorization: "Bearer " + token } });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    (data.documents || []).forEach(function (d) { out.push(reportFromDoc(d)); });
+    pageToken = data.nextPageToken || "";
+  } while (pageToken);
+  return out.sort(newestFirst);
+}
+
+// Email sign-ups (pop-up and footer form) go to Firestore `subscribers`; the email is the document id, so repeats collapse.
+const EMAIL_RE = /^[^\s@\/]+@[^\s@\/]+\.[^\s@\/]+$/;
+
+async function subscribeEmail(raw, source) {
+  const email = String(raw || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email) || email.length > 254) return { ok: false, reason: "invalid" };
+  if (!FB) {
+    try {
+      const list = JSON.parse(localStorage.getItem("ggSubscribers") || "[]");
+      if (list.indexOf(email) === -1) list.push(email);
+      localStorage.setItem("ggSubscribers", JSON.stringify(list));
+    } catch (e) {}
+    return { ok: true, local: true };
+  }
+  try {
+    const res = await fetch(FS + "/subscribers?documentId=" + encodeURIComponent(email) + "&key=" + FB.apiKey, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: {
+        email: { stringValue: email },
+        source: { stringValue: source || "site" },
+        createdAt: { stringValue: new Date().toISOString() },
+      } }),
+    });
+    if (res.ok) return { ok: true };
+    if (res.status === 409) return { ok: true, existing: true };
+    throw new Error("HTTP " + res.status);
+  } catch (e) {
+    console.warn("Sign-up failed (check the Firestore rules for `subscribers`):", e.message);
+    return { ok: false, reason: "network" };
+  }
 }
 
 async function fbSignUp(email, password, meta) {
+  const token = await fbEnsureToken();
   const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + FB.apiKey, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: email, password: password, returnSecureToken: true }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error((data.error && data.error.message) || "Could not create the login");
+  if (!res.ok) throw new Error(authErrorText((data.error && data.error.message) || "Could not create the login"));
   // Write their profile with the admin's own token, not the new user's.
-  await fetch(FS + "/users/" + data.localId + "?key=" + FB.apiKey, {
+  const pr = await fetch(FS + "/users/" + data.localId + "?key=" + FB.apiKey, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token },
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
     body: JSON.stringify({
       fields: {
         name: { stringValue: meta.name },
+        email: { stringValue: email },
         role: { stringValue: meta.role },
         title: { stringValue: meta.title || "" },
+        active: { stringValue: "true" },
+        tools: { stringValue: "tof,eff" },
+        createdAt: { stringValue: new Date().toISOString() },
       },
     }),
   });
+  if (!pr.ok) throw new Error("The login was created but its profile could not be saved (HTTP " + pr.status + "). Check the Firestore rules.");
   return data;
+}
+
+function authErrorText(msg) {
+  msg = String(msg || "");
+  if (msg.indexOf("EMAIL_EXISTS") === 0) return "That email already has a Firebase login. If it is not in the list above, delete it in Firebase Console \u2192 Authentication, then add it again.";
+  if (msg.indexOf("WEAK_PASSWORD") === 0) return "Password must be at least 6 characters.";
+  if (msg.indexOf("INVALID_EMAIL") === 0) return "That email address is not valid.";
+  return msg;
 }
 
 /* --- One interface over whichever backend is configured -------------------- */
@@ -468,6 +658,7 @@ const services = [
   { phase: "Assess", phaseNumber: "05", title: "Readiness Check", description: "See where capability is landing before you call the learning complete.", type: "Assessment", accent: "yellow", icon: "gauge", status: "Ready" },
   { phase: "Coach", phaseNumber: "06", title: "Manager as Coach", description: "Small, repeatable conversations that make coaching part of the week.", type: "Practice", accent: "peach", icon: "users", status: "For teams" },
   { phase: "Observe", phaseNumber: "07", title: "Trainer Observation", description: "Replace subjective feedback with a thoughtful, calibrated observation rhythm.", type: "Rubric", accent: "aqua", icon: "eye", status: "For teams", featured: true },
+  { phase: "Measure", phaseNumber: "08", title: "Trainer Effectiveness", description: "Blend L1, TOF, throughput, utilization and attendance into one weighted score and a clear rating.", type: "Scorecard", accent: "sky", icon: "gauge", status: "For teams" },
   { phase: "Measure", phaseNumber: "08", title: "Impact Dashboard", description: "Make the signal stronger than the spreadsheet with business-aligned measures.", type: "Dashboard", accent: "lavender", icon: "flame", status: "For teams" },
   { phase: "Improve", phaseNumber: "09", title: "Program Retrospective", description: "Close the loop with a repeatable moment to notice, learn, and improve.", type: "Workshop", accent: "green", icon: "lightbulb", status: "Ready" },
 ];
@@ -637,6 +828,7 @@ function showView(name) {
   Object.keys(viewEls).forEach(function (key) {
     viewEls[key].classList.toggle("is-active", key === name);
   });
+  if (name !== "home" && window.ggHideSignup) window.ggHideSignup();
   window.scrollTo({ top: 0 });
 }
 
@@ -935,22 +1127,75 @@ document.getElementById("home-menu-btn").addEventListener("click", function () {
   this.innerHTML = ic(open ? "x" : "menu", 20);
 });
 
-document.getElementById("newsletter-form").addEventListener("submit", function (event) {
+document.getElementById("newsletter-form").addEventListener("submit", async function (event) {
   event.preventDefault();
   const input = document.getElementById("newsletter-email");
-  if (!input.value.includes("@")) {
-    toast("Drop in a valid email so we know where to send the good stuff.");
+  const r = await subscribeEmail(input.value, "footer");
+  if (!r.ok) {
+    toast(r.reason === "invalid"
+      ? "Drop in a valid email so we know where to send the good stuff."
+      : "Could not sign you up just now. Please try again.");
     return;
   }
   newsletterSubmitted = true;
+  markSubscribed();
   input.value = "";
-  document.getElementById("newsletter-note").textContent = "You’re in. Watch your inbox.";
-  toast("You’re on the list. Welcome to the lab notes.");
+  document.getElementById("newsletter-note").textContent = "You\u2019re in. Watch your inbox.";
+  toast(r.existing ? "You\u2019re already on the list." : "You\u2019re on the list. Welcome to the lab notes.");
 });
 
-document.getElementById("back-to-top").addEventListener("click", function () {
-  window.scrollTo({ top: 0, behavior: "smooth" });
+/* Email sign-up pop-up: opens on the homepage. Gone for good once someone subscribes;
+   if closed, it stays away for the rest of that browser tab's session. */
+const signupVeil = document.getElementById("signup-veil");
+
+function markSubscribed() {
+  try { localStorage.setItem("ggSubscribed", "1"); } catch (e) {}
+}
+
+function signupSuppressed() {
+  try { return localStorage.getItem("ggSubscribed") === "1" || sessionStorage.getItem("ggSignupSeen") === "1"; }
+  catch (e) { return false; }
+}
+
+function openSignup() {
+  if (currentUser || signupSuppressed() || (features && features.newsletter === false)) return;
+  signupVeil.hidden = false;
+  hydrateIcons(signupVeil);
+  document.getElementById("signup-email").focus();
+}
+
+function closeSignup() {
+  signupVeil.hidden = true;
+  try { sessionStorage.setItem("ggSignupSeen", "1"); } catch (e) {}
+}
+
+window.ggHideSignup = function () { signupVeil.hidden = true; };
+
+document.getElementById("signup-close").addEventListener("click", closeSignup);
+document.getElementById("signup-skip").addEventListener("click", closeSignup);
+signupVeil.addEventListener("click", function (event) { if (event.target === signupVeil) closeSignup(); });
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape" && !signupVeil.hidden) closeSignup();
 });
+
+document.getElementById("signup-form").addEventListener("submit", async function (event) {
+  event.preventDefault();
+  const input = document.getElementById("signup-email");
+  const note = document.getElementById("signup-note");
+  const btn = event.target.querySelector("button[type=submit]");
+  btn.disabled = true;
+  const r = await subscribeEmail(input.value, "popup");
+  btn.disabled = false;
+  if (!r.ok) {
+    note.textContent = r.reason === "invalid" ? "That email does not look right." : "Could not sign you up just now. Please try again.";
+    return;
+  }
+  markSubscribed();
+  note.textContent = r.existing ? "You\u2019re already on the list." : "You\u2019re in. Watch your inbox.";
+  toast(r.existing ? "You\u2019re already on the list." : "You\u2019re on the list. Welcome to the lab notes.");
+  setTimeout(function () { signupVeil.hidden = true; }, 1400);
+});
+
 
 /* -----------------------------------------------------------------------------
    7. SIGN IN
@@ -1016,13 +1261,25 @@ document.getElementById("forgot-password").addEventListener("click", async funct
   }
 });
 
+function parseJson(text) {
+  try { const v = JSON.parse(text); return v && typeof v === "object" ? v : null; } catch (e) { return null; }
+}
+
+// Which trainer tools a login may open. A profile with no `tools` field (older logins) gets both.
+function parseTools(text) {
+  return text === undefined || text === null ? ["tof", "eff"] : String(text).split(",").filter(Boolean);
+}
+
 function userFromAccount(account) {
   const meta = account.meta || {};
   return {
+    uid: session ? session.uid : "",
     name: meta.name || account.email.split("@")[0],
     email: account.email,
     role: meta.role || "individual",
     title: meta.title || "",
+    tools: parseTools(meta.tools),
+    scoring: parseJson(meta.scoring),
   };
 }
 
@@ -1039,9 +1296,13 @@ document.getElementById("login-form").addEventListener("submit", async function 
     account = await fbSignIn(typed, pass);
   } catch (e) {
     console.warn("Sign-in failed:", e.message);
-    toast(e.message.indexOf("TOO_MANY_ATTEMPTS") === 0
-      ? "Too many attempts. Try again later."
-      : "That email and password were not accepted.");
+    toast(e.message === "NO_PROFILE"
+      ? "This login has not been set up yet. Ask an admin to add you."
+      : e.message === "ACCESS_DISABLED"
+      ? "This login has been suspended. Contact an admin."
+      : e.message.indexOf("TOO_MANY_ATTEMPTS") === 0
+        ? "Too many attempts. Try again later."
+        : "That email and password were not accepted.");
     return;
   }
 
@@ -1066,6 +1327,7 @@ const dashboardEmptyEl = document.getElementById("dashboard-empty");
 
 function renderDashboard() {
   if (!currentUser) return;
+  if (window.ggToolsHello) window.ggToolsHello(currentUser);
   document.getElementById("profile-avatar").textContent = currentUser.name
     .split(" ")
     .map(function (word) { return word[0]; })
@@ -1136,6 +1398,7 @@ phaseFiltersEl.addEventListener("click", function (event) {
 serviceGridEl.addEventListener("click", function (event) {
   const btn = event.target.closest("[data-open-service]");
   if (!btn) return;
+  if (window.ggOpenTool && window.ggOpenTool(btn.dataset.openService)) return;
   toast(btn.dataset.openService + " is ready to explore in this demo.");
 });
 
@@ -1183,6 +1446,15 @@ const profileMenu = document.getElementById("profile-menu");
 const veil = document.getElementById("modal-veil");
 const modalBody = document.getElementById("modal-body");
 
+// One place that ends a session: memory, the saved refresh token and any tool drafts.
+function signOut() {
+  currentUser = null;
+  session = null;
+  clearAuth();
+  if (window.ggResetTools) window.ggResetTools();
+  showView("home");
+}
+
 function setMenuOpen(open) {
   profileMenu.hidden = !open;
   document.getElementById("admin-item").hidden = !(currentUser && currentUser.role === "admin");
@@ -1222,10 +1494,7 @@ profileMenu.addEventListener("click", function (event) {
   if (action === "theme") { toggleTheme(); return; }
   if (action === "admin") { openAdmin("brand"); return; }
   if (action === "signout") {
-    currentUser = null;
-    session = null;
-    clearAuth();
-    showView("home");
+    signOut();
     toast("Signed out. See you soon.");
     return;
   }
@@ -1346,7 +1615,12 @@ modalBody.addEventListener("input", function (event) {
   }
 });
 
+modalBody.addEventListener("input", function (event) {
+  if (event.target.matches("[data-mu-w]")) updateMuTotal();
+});
+
 modalBody.addEventListener("change", function (event) {
+  if (event.target.id === "rep-filter") { renderReportRows(); return; }
   if (event.target.id !== "hero-upload" || !event.target.files[0]) return;
   const reader = new FileReader();
   reader.onload = function () {
@@ -1392,6 +1666,7 @@ function applyFeatures() {
 }
 
 function openAdmin(tab) {
+  if (tab !== "people") manageRec = null;
   document.getElementById("modal-eyebrow").textContent = "Super admin";
   document.getElementById("modal-title").textContent = "Console";
   modalBody.dataset.mode = "admin";
@@ -1400,7 +1675,7 @@ function openAdmin(tab) {
     '<div class="admin-tabs">' +
     [["brand", "Brand"], ["copy", "Copy"], ["hero", "Hero"], ["phases", "Phases"],
      ["tiles", "Service tiles"], ["plans", "Plans"], ["posts", "Field notes"],
-     ["people", "Logins"], ["features", "Features"]]
+     ["people", "Logins"], ["reports", "Reports"], ["subs", "Subscribers"], ["features", "Features"]]
       .map(function (t) {
         return '<button data-admin-tab="' + t[0] + '" class="' + (tab === t[0] ? "selected" : "") + '">' + t[1] + "</button>";
       })
@@ -1408,10 +1683,14 @@ function openAdmin(tab) {
     "</div>" +
     ({ brand: adminBrand, copy: adminCopy, hero: adminHero, phases: adminPhases,
        tiles: adminTiles, plans: adminPlans, posts: adminPosts, people: adminPeople,
-       features: adminFeatures }[tab] || adminFeatures)();
+       reports: adminReports, subs: adminSubs, features: adminFeatures }[tab] || adminFeatures)();
   document.querySelector(".modal").classList.add("wide");
   veil.hidden = false;
   hydrateIcons(modalBody);
+  if (tab === "people" && manageRec) updateMuTotal();
+  if (tab === "people" && !manageRec) loadPeople();
+  else if (tab === "reports") loadReports();
+  else if (tab === "subs") loadSubs();
 }
 
 function adminFeatures() {
@@ -1428,9 +1707,15 @@ function adminFeatures() {
   );
 }
 
+let manageRec = null;   // the login being edited in the Logins tab
+let peopleCache = [];
+let reportsCache = [];
+
 function adminPeople() {
+  if (manageRec) return adminManageHtml(manageRec);
   return (
-    '<p class="admin-note">Logins are Firebase accounts. Add one here and the person can sign in straight away. To remove or disable a login, use Firebase Console &rarr; Authentication.</p>' +
+    '<p class="admin-note">Everyone here is stored in the database (Firestore <code>users</code>) and has a Firebase login. Add one and the person can sign in straight away. <strong>Manage</strong> sets each person&rsquo;s access and scoring. Removing revokes their access; to delete the Firebase account itself, also remove it in Firebase Console &rarr; Authentication.</p>' +
+    '<div class="admin-list" id="people-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>' +
     '<div class="admin-new"><strong>Add a login</strong>' +
     '<div class="admin-grid">' +
     '<input id="nu-name" placeholder="Full name" />' +
@@ -1441,6 +1726,256 @@ function adminPeople() {
     "</select>" + ic("chevron-down", 15) + "</div></div>" +
     '<button class="auth-submit compact" data-add-user>Create login ' + ic("check", 15) + "</button></div>"
   );
+}
+
+async function loadPeople() {
+  const box = document.getElementById("people-list");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = '<div class="admin-row"><div><strong>Sign in with Firebase to see logins.</strong></div></div>'; return; }
+  try {
+    const rows = await fbList("users");
+    const el = document.getElementById("people-list");
+    if (!el) return; // the admin switched tabs while this loaded
+    rows.sort(function (a, b) { return String(a.fields.name || "").localeCompare(String(b.fields.name || "")); });
+    peopleCache = rows;
+    el.innerHTML = rows.length
+      ? rows.map(function (r) {
+          const me = session && r.id === session.uid;
+          const email = r.fields.email || (me ? session.email : "");
+          const role = r.fields.role || "individual";
+          return (
+            '<div class="admin-row"><div><strong>' + esc(r.fields.name || "(no name)") + "</strong>" +
+            "<span>" + esc(email || "uid " + r.id) + (r.fields.title ? " &middot; " + esc(r.fields.title) : "") + "</span></div>" +
+            (r.fields.active === "false" ? '<span class="role-pill suspended">suspended</span>' : "") +
+            '<span class="role-pill ' + esc(role) + '">' + esc(role) + "</span>" +
+            '<button class="ghost-button" data-manage-user="' + esc(r.id) + '">Manage</button>' +
+            (me ? "" : '<button class="icon-button" data-del-user="' + esc(r.id) + '" aria-label="Remove ' + esc(r.fields.name || "login") + '">' + ic("x", 14) + "</button>") +
+            "</div>"
+          );
+        }).join("")
+      : '<div class="admin-row"><div><strong>No logins yet.</strong></div></div>';
+  } catch (e) {
+    const el = document.getElementById("people-list");
+    if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load logins.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
+  }
+}
+
+/* ---- Manage one login: access + scoring --------------------------------- */
+
+const MANAGE_TOOLS = [["tof", "Trainer Observation Form"], ["eff", "Trainer Effectiveness"]];
+
+function muNum(v) { return String(parseFloat(Number(v).toFixed(4))); }
+
+function muSwitch(attr, on, disabled) {
+  return '<button type="button" class="switch ' + (on ? "on" : "") + '" ' + attr + ' role="switch" aria-checked="' + on + '"' + (disabled ? " disabled" : "") + "><span></span></button>";
+}
+
+function adminManageHtml(rec) {
+  const GG = window.GGTools, f = rec.fields;
+  const me = !!(session && rec.id === session.uid);
+  const cfg = GG.normCfg(parseJson(f.scoring));
+  const tools = parseTools(f.tools);
+  const sw = cfg.tof.sectionWeights;
+
+  const effRows = GG.EFF_KEYS.map(function (k) {
+    return "<tr><td>" + GG.EFF_LABELS[k] + "</td>" +
+      '<td><input type="number" step="any" min="0" data-mu-w="' + k + '" value="' + muNum(cfg.eff.weights[k]) + '" /></td>' +
+      '<td><input type="number" step="any" data-mu-min="' + k + '" value="' + muNum(cfg.eff.min[k]) + '" /></td>' +
+      '<td class="mu-check"><input type="checkbox" data-mu-gate="' + k + '"' + (cfg.eff.gate[k] ? " checked" : "") + " /></td></tr>";
+  }).join("");
+
+  const secRows = GG.TOF_SECTIONS.map(function (sec, i) {
+    return '<label class="mu-sec"><span>' + esc(sec.title) + '</span><input type="number" step="any" min="0" data-mu-sw="' + i + '" value="' +
+      muNum(sw ? sw[i] : sec.items.length) + '"' + (sw ? "" : " disabled") + " /></label>";
+  }).join("");
+
+  return (
+    '<button type="button" class="back-link" data-admin-back>' + ic("arrow-left", 14) + " All logins</button>" +
+    '<p class="admin-note"><strong>' + esc(f.name || "(no name)") + "</strong> &middot; " + esc(f.email || (me ? session.email : "uid " + rec.id)) +
+    "<br />Changes apply the next time this person signs in.</p>" +
+    '<div class="mu-block"><strong>Profile</strong><div class="admin-grid">' +
+    '<input id="mu-name" placeholder="Full name" value="' + esc(f.name || "") + '" />' +
+    '<input id="mu-title" placeholder="Title" value="' + esc(f.title || "") + '" />' +
+    '<div class="select-wrap"><select id="mu-role"' + (me ? " disabled" : "") + ">" +
+    [["individual", "Individual"], ["corporate", "Corporate L&D"], ["admin", "Super admin"]].map(function (o) {
+      return '<option value="' + o[0] + '"' + ((f.role || "individual") === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+    }).join("") + "</select>" + ic("chevron-down", 15) + "</div></div></div>" +
+
+    '<div class="mu-block"><strong>Access</strong>' +
+    '<div class="pref-row"><div><strong>Can sign in</strong><span>' + (me ? "You cannot suspend yourself." : "Switch off to suspend this login. Nothing is deleted and their reports stay.") + "</span></div>" +
+    muSwitch("data-mu-active", f.active !== "false", me) + "</div>" +
+    MANAGE_TOOLS.map(function (t) {
+      return '<div class="pref-row"><div><strong>' + t[1] + "</strong><span>Whether this person can open the tool.</span></div>" + muSwitch('data-mu-tool="' + t[0] + '"', tools.indexOf(t[0]) !== -1) + "</div>";
+    }).join("") + "</div>" +
+
+    '<div class="mu-block"><strong>Trainer Effectiveness scoring</strong>' +
+    '<p class="admin-note">Each measure\u2019s weight, its minimum, and whether falling below the minimum forces &ldquo;Needs Improvement&rdquo;. The defaults are the rules from the Excel workbook.</p>' +
+    '<table class="mu-table"><thead><tr><th>Measure</th><th>Weight %</th><th>Minimum %</th><th>Forces Needs Improvement</th></tr></thead><tbody>' + effRows + "</tbody></table>" +
+    '<div class="mu-total" id="mu-total"></div>' +
+    '<div class="admin-grid"><label class="mu-sec"><span>Effective above (%)</span><input type="number" step="any" id="mu-effective" value="' + muNum(cfg.eff.effective) + '" /></label>' +
+    '<label class="mu-sec"><span>Satisfactory from (%)</span><input type="number" step="any" id="mu-satisfactory" value="' + muNum(cfg.eff.satisfactory) + '" /></label></div></div>' +
+
+    '<div class="mu-block"><strong>Trainer Observation Form scoring</strong>' +
+    '<div class="pref-row"><div><strong>Weight the sections differently</strong><span>Off: every item counts equally, as in the Excel form. On: the overall score is an average of the section scores by these weights.</span></div>' +
+    muSwitch("data-mu-tofw", !!sw) + "</div>" +
+    '<div class="mu-secs" id="mu-secs">' + secRows + "</div></div>" +
+
+    '<div class="modal-actions"><button type="button" class="ghost-button" data-mu-reset>Reset scoring to defaults</button>' +
+    '<button type="button" class="auth-submit compact" data-save-user="' + esc(rec.id) + '">Save changes ' + ic("check", 15) + "</button></div>"
+  );
+}
+
+function updateMuTotal() {
+  const box = document.getElementById("mu-total");
+  if (!box) return;
+  let sum = 0;
+  Array.from(modalBody.querySelectorAll("[data-mu-w]")).forEach(function (i) { sum += Number(i.value) || 0; });
+  const good = Math.abs(sum - 100) < 0.01;
+  box.textContent = "Total weight: " + muNum(sum) + "%" + (good ? "" : " \u2014 must add up to 100%");
+  box.classList.toggle("bad", !good);
+}
+
+// Read the editor, check it, save it. Returns a promise.
+function saveManagedLogin(uid) {
+  const GG = window.GGTools;
+  const q = function (sel) { return modalBody.querySelector(sel); };
+  const on = function (sel) { const el = q(sel); return !!el && el.classList.contains("on"); };
+  const read = function (el) { return el.value.trim() === "" ? NaN : Number(el.value); };
+
+  const name = q("#mu-name").value.trim();
+  if (!name) return Promise.reject(new Error("Name cannot be empty."));
+
+  const weights = {}, min = {}, gate = {};
+  let sum = 0;
+  for (const k of GG.EFF_KEYS) {
+    weights[k] = read(q('[data-mu-w="' + k + '"]'));
+    min[k] = read(q('[data-mu-min="' + k + '"]'));
+    gate[k] = q('[data-mu-gate="' + k + '"]').checked;
+    if (!isFinite(weights[k]) || weights[k] < 0) return Promise.reject(new Error("Every weight must be a number, 0 or more."));
+    if (!isFinite(min[k])) return Promise.reject(new Error("Every minimum must be a number."));
+    sum += weights[k];
+  }
+  if (Math.abs(sum - 100) > 0.01) return Promise.reject(new Error("Weights must add up to 100% (now " + muNum(sum) + "%)."));
+  const effective = read(q("#mu-effective")), satisfactory = read(q("#mu-satisfactory"));
+  if (!isFinite(effective) || !isFinite(satisfactory)) return Promise.reject(new Error("Enter both rating cut-offs."));
+  if (satisfactory > effective) return Promise.reject(new Error("Satisfactory cannot be above the Effective cut-off."));
+
+  let sectionWeights = null;
+  if (on("[data-mu-tofw]")) {
+    sectionWeights = Array.from(modalBody.querySelectorAll("[data-mu-sw]")).map(read);
+    if (sectionWeights.some(function (w) { return !isFinite(w) || w < 0; })) return Promise.reject(new Error("Section weights must be numbers, 0 or more."));
+    if (!(sectionWeights.reduce(function (a, b) { return a + b; }, 0) > 0)) return Promise.reject(new Error("At least one section needs a weight above 0."));
+  }
+
+  const cfg = GG.normCfg({ eff: { weights: weights, min: min, gate: gate, effective: effective, satisfactory: satisfactory }, tof: { sectionWeights: sectionWeights } });
+  const fields = {
+    name: name,
+    title: q("#mu-title").value.trim(),
+    tools: MANAGE_TOOLS.map(function (t) { return t[0]; }).filter(function (k) { return on('[data-mu-tool="' + k + '"]'); }).join(","),
+    scoring: GG.cfgIsCustom(cfg) ? JSON.stringify(cfg) : "",
+  };
+  if (!(session && uid === session.uid)) {
+    fields.role = q("#mu-role").value;
+    fields.active = on("[data-mu-active]") ? "true" : "false";
+  }
+  return fbUpdateUser(uid, fields);
+}
+
+/* ---- Reports tab (admin sees everyone's saved reports) ------------------- */
+
+function adminReports() {
+  return (
+    '<p class="admin-note">Every report saved by every participant (Firestore <code>reports</code>). Download any of them as a PDF, exactly as it was scored when it was saved.</p>' +
+    '<div class="admin-grid"><div class="select-wrap"><select id="rep-filter"><option value="">All participants</option></select>' + ic("chevron-down", 15) + "</div></div>" +
+    '<div class="admin-list" id="reports-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>'
+  );
+}
+
+function reportKind(type) { return type === "tof" ? "Observation" : "Effectiveness"; }
+
+function renderReportRows() {
+  const box = document.getElementById("reports-list");
+  if (!box) return;
+  const who = (document.getElementById("rep-filter") || {}).value || "";
+  const rows = reportsCache.filter(function (r) { return !who || r.uid === who; });
+  box.innerHTML = rows.length
+    ? rows.map(function (r) {
+        return '<div class="admin-row"><div><strong>' + esc(r.title || "(untitled)") + "</strong><span>" + esc(r.name || r.email || r.uid) + " &middot; " +
+          reportKind(r.type) + " &middot; " + esc(String(r.createdAt || "").slice(0, 16).replace("T", " ")) + (r.score ? " &middot; " + esc(r.score) : "") + "</span></div>" +
+          '<button class="ghost-button" data-rep-admin-pdf="' + esc(r.id) + '">PDF</button>' +
+          '<button class="icon-button" data-rep-del="' + esc(r.id) + '" aria-label="Delete report">' + ic("x", 14) + "</button></div>";
+      }).join("")
+    : '<div class="admin-row"><div><strong>No reports saved yet.</strong></div></div>';
+}
+
+async function loadReports() {
+  const box = document.getElementById("reports-list");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = '<div class="admin-row"><div><strong>Sign in with Firebase to see reports.</strong></div></div>'; return; }
+  try {
+    reportsCache = await fbAllReports();
+    if (!document.getElementById("reports-list")) return;
+    const seen = {};
+    const sel = document.getElementById("rep-filter");
+    reportsCache.forEach(function (r) {
+      if (seen[r.uid]) return;
+      seen[r.uid] = true;
+      const o = document.createElement("option");
+      o.value = r.uid; o.textContent = r.name || r.email || r.uid;
+      sel.appendChild(o);
+    });
+    renderReportRows();
+  } catch (e) {
+    const el = document.getElementById("reports-list");
+    if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load reports.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
+  }
+}
+
+let subsCache = [];
+
+function adminSubs() {
+  return (
+    '<p class="admin-note">Everyone who signed up through the homepage pop-up or the footer form (Firestore <code>subscribers</code>).</p>' +
+    '<div class="admin-list" id="subs-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>' +
+    '<div class="modal-actions"><button class="ghost-button" data-subs-csv>Download CSV</button></div>'
+  );
+}
+
+async function loadSubs() {
+  const box = document.getElementById("subs-list");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = '<div class="admin-row"><div><strong>Sign in with Firebase to see subscribers.</strong></div></div>'; return; }
+  try {
+    const rows = await fbList("subscribers");
+    const el = document.getElementById("subs-list");
+    if (!el) return;
+    subsCache = rows.map(function (r) {
+      return { email: r.fields.email || decodeURIComponent(r.id), source: r.fields.source || "", createdAt: r.fields.createdAt || "" };
+    }).sort(function (a, b) { return b.createdAt.localeCompare(a.createdAt); });
+    el.innerHTML = subsCache.length
+      ? '<div class="admin-row"><div><strong>' + subsCache.length + " subscriber" + (subsCache.length === 1 ? "" : "s") + "</strong></div></div>" +
+        subsCache.map(function (r) {
+          return '<div class="admin-row"><div><strong>' + esc(r.email) + "</strong><span>" + esc(r.source) +
+            (r.createdAt ? " &middot; " + esc(r.createdAt.slice(0, 10)) : "") + "</span></div></div>";
+        }).join("")
+      : '<div class="admin-row"><div><strong>No subscribers yet.</strong></div></div>';
+  } catch (e) {
+    const el = document.getElementById("subs-list");
+    if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load subscribers.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
+  }
+}
+
+function downloadSubsCsv() {
+  if (!subsCache.length) { toast("No subscribers to export yet."); return; }
+  const q = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+  const csv = ["email,source,signed_up"].concat(subsCache.map(function (r) { return [q(r.email), q(r.source), q(r.createdAt)].join(","); })).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "subscribers.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
 }
 
 function adminPosts() {
@@ -1488,6 +2023,79 @@ modalBody.addEventListener("click", function (event) {
     return;
   }
 
+  const manage = event.target.closest("[data-manage-user]");
+  if (manage) {
+    const rec = peopleCache.filter(function (r) { return r.id === manage.dataset.manageUser; })[0];
+    if (rec) { manageRec = rec; openAdmin("people"); updateMuTotal(); }
+    return;
+  }
+  if (event.target.closest("[data-admin-back]")) { manageRec = null; openAdmin("people"); return; }
+
+  const muSw = event.target.closest(".switch[data-mu-active], .switch[data-mu-tool], .switch[data-mu-tofw]");
+  if (muSw) {
+    if (muSw.disabled) return;
+    const next = !muSw.classList.contains("on");
+    muSw.classList.toggle("on", next);
+    muSw.setAttribute("aria-checked", String(next));
+    if (muSw.hasAttribute("data-mu-tofw")) {
+      Array.from(modalBody.querySelectorAll("[data-mu-sw]")).forEach(function (i) { i.disabled = !next; });
+    }
+    return;
+  }
+
+  if (event.target.closest("[data-mu-reset]")) {
+    const D = window.GGTools.DEFAULT_CFG;
+    window.GGTools.EFF_KEYS.forEach(function (k) {
+      modalBody.querySelector('[data-mu-w="' + k + '"]').value = D.eff.weights[k];
+      modalBody.querySelector('[data-mu-min="' + k + '"]').value = D.eff.min[k];
+      modalBody.querySelector('[data-mu-gate="' + k + '"]').checked = D.eff.gate[k];
+    });
+    document.getElementById("mu-effective").value = D.eff.effective;
+    document.getElementById("mu-satisfactory").value = D.eff.satisfactory;
+    const tw = modalBody.querySelector("[data-mu-tofw]");
+    tw.classList.remove("on"); tw.setAttribute("aria-checked", "false");
+    Array.from(modalBody.querySelectorAll("[data-mu-sw]")).forEach(function (i, n) {
+      i.disabled = true; i.value = window.GGTools.TOF_SECTIONS[n].items.length;
+    });
+    updateMuTotal();
+    toast("Scoring reset to the defaults. Save to apply.");
+    return;
+  }
+
+  const saveUser = event.target.closest("[data-save-user]");
+  if (saveUser) {
+    saveManagedLogin(saveUser.dataset.saveUser)
+      .then(function () { toast("Saved. It applies the next time they sign in."); manageRec = null; openAdmin("people"); })
+      .catch(function (err) { toast(err.message); });
+    return;
+  }
+
+  const repPdf = event.target.closest("[data-rep-admin-pdf]");
+  if (repPdf) {
+    const rec = reportsCache.filter(function (r) { return r.id === repPdf.dataset.repAdminPdf; })[0];
+    if (rec && window.ggDownloadReport) window.ggDownloadReport(rec);
+    return;
+  }
+  const repDel = event.target.closest("[data-rep-del]");
+  if (repDel) {
+    if (!window.confirm("Delete this report permanently? The participant will lose it from their history.")) return;
+    fbDelete("reports", repDel.dataset.repDel)
+      .then(function () { reportsCache = reportsCache.filter(function (r) { return r.id !== repDel.dataset.repDel; }); renderReportRows(); toast("Report deleted."); })
+      .catch(function (err) { toast("Could not delete: " + err.message); });
+    return;
+  }
+
+  const delUser = event.target.closest("[data-del-user]");
+  if (delUser) {
+    if (!window.confirm("Remove this login from the database? They will no longer be able to sign in.")) return;
+    fbDelete("users", delUser.dataset.delUser)
+      .then(function () { toast("Login removed."); loadPeople(); })
+      .catch(function (err) { toast("Could not remove: " + err.message); });
+    return;
+  }
+
+  if (event.target.closest("[data-subs-csv]")) { downloadSubsCsv(); return; }
+
   if (event.target.closest("[data-add-user]")) {
     const name = document.getElementById("nu-name").value.trim();
     const email = document.getElementById("nu-email").value.trim().toLowerCase();
@@ -1496,7 +2104,7 @@ modalBody.addEventListener("click", function (event) {
     if (!FB || !session) { toast("Sign in with Firebase to add logins."); return; }
     const newRole = document.getElementById("nu-role").value;
     backendSignUp(email, pass, { name: name, role: newRole, title: "" })
-      .then(function () { toast(name + " can now sign in."); })
+      .then(function () { toast(name + " can now sign in."); openAdmin("people"); })
       .catch(function (err) { toast(err.message); });
     return;
   }
@@ -1822,7 +2430,10 @@ document.addEventListener("click", function (event) {
   const goto = event.target.closest("[data-goto]");
   if (goto) {
     const target = goto.dataset.goto;
-    if (target === "home") currentUser = null;
+    if (target === "home") {
+      if (currentUser || session) { signOut(); return; }
+      currentUser = null;
+    }
     showView(target);
     return;
   }
@@ -1878,6 +2489,8 @@ document.getElementById("home-menu-btn").innerHTML = ic("menu", 20);
 document.getElementById("dash-menu-btn").innerHTML = ic("menu", 20);
 renderPasswordToggle();
 hydrateIcons(document);
+
+setTimeout(openSignup, 1200);
 
 fbRestore()
   .then(function (account) {

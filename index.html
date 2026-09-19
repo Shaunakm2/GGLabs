@@ -14,6 +14,7 @@
     />
     
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/tools.css" />
     <script>
       // Apply the saved theme before paint so the page never flashes the wrong colours.
       try {
@@ -479,6 +480,7 @@
         <nav class="dashboard-nav" id="dashboard-nav">
           <span class="dashboard-breadcrumb">Your workspace</span>
           <a href="#services">Services</a>
+          <a href="#" data-open-tool="reports">My reports</a>
           <a href="#activity">Activity</a>
         </nav>
         <div class="dashboard-actions">
@@ -570,10 +572,50 @@
       </div>
     </div>
 
+    <!-- Trainer tools: opened from the Trainer Observation / Trainer Effectiveness tiles.
+         Logic: assets/tools-core.js  Screen: assets/tools-ui.js -->
+    <div class="tool-sheet" id="tool-sheet" hidden>
+      <div class="tool-sheet-bar">
+        <div class="page-width tool-sheet-bar-inner">
+          <button type="button" class="back-link" data-tool-back><i data-i="arrow-left" data-s="14"></i> Back to workspace</button>
+          <span class="tool-sheet-tag" id="tool-kicker"></span>
+        </div>
+      </div>
+      <div class="page-width tool-sheet-body">
+        <div class="tt-head"><h2 id="tool-title"></h2></div>
+        <div class="tt-panel" id="tt-tof"></div>
+        <div class="tt-panel" id="tt-eff" hidden></div>
+        <div class="tt-panel" id="tt-reports" hidden></div>
+      </div>
+    </div>
+
+    <!-- Email sign-up pop-up (opens on the homepage) -->
+    <div class="modal-veil" id="signup-veil" hidden>
+      <div class="modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-title">
+        <div class="modal-top">
+          <div><span class="card-eyebrow">Lab notes</span><h2 id="signup-title">Get the good stuff in your inbox</h2></div>
+          <button type="button" class="su-close" id="signup-close" aria-label="Close"><i data-i="x" data-s="16"></i></button>
+        </div>
+        <form class="su-form" id="signup-form" novalidate>
+          <p>One short email when there is something worth reading: practical L&amp;D ideas, new tools and field notes. No noise. Unsubscribe whenever.</p>
+          <div class="su-row">
+            <input id="signup-email" type="email" placeholder="you@somewhere-good.com" autocomplete="email" aria-label="Email address" />
+            <button type="submit" class="auth-submit compact">Sign up</button>
+          </div>
+          <div class="form-note" id="signup-note" aria-live="polite"></div>
+        </form>
+        <button type="button" class="su-skip" id="signup-skip">Maybe later</button>
+      </div>
+    </div>
+
     <!-- Toast notifications -->
     <ol class="gg-toaster" id="gg-toaster" aria-live="polite"></ol>
 
     <script src="assets/backend-config.js"></script>
+    <script src="assets/vendor/jspdf.umd.min.js"></script>
+    <script src="assets/vendor/jspdf.plugin.autotable.min.js"></script>
+    <script src="assets/tools-core.js"></script>
     <script src="assets/app.js"></script>
+    <script src="assets/tools-ui.js"></script>
   </body>
 </html>

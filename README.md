@@ -51,6 +51,19 @@ Edit in Notepad, TextEdit, or directly in GitHub's web editor. Save, refresh the
 
 Sign-in uses Firebase Authentication only (email + password). Add your keys in `assets/backend-config.js` and create users in Firebase Console → Authentication — see `FIREBASE-SETUP.md`. There are no built-in accounts.
 
+## Trainer tools, PDFs and the sign-up pop-up
+
+| What | Where |
+|---|---|
+| Scoring rules (ported from the two Excel files) and PDF layouts | `assets/tools-core.js` |
+| The two forms, opened from the **Trainer Observation** and **Trainer Effectiveness** service tiles (matched by title) | `assets/tools-ui.js`, `assets/tools.css` |
+| PDF libraries (bundled, no CDN) | `assets/vendor/` |
+| Email sign-up pop-up | `id="signup-veil"` in `index.html`; logic in `assets/app.js` |
+
+Email sign-ups and saved reports need the `subscribers` and `reports` rules from `FIREBASE-SETUP.md` step 4.
+
+**Participants (Admin console → Logins → Manage):** suspend or reinstate a login, switch each trainer tool on or off for them, and set their scoring: the weight, minimum and "forces Needs Improvement" flag for each Effectiveness measure, the Effective / Satisfactory cut-offs, and optional section weights for the Observation Form. Each saved report stores the scoring that was used. Admin → Reports lists everyone's saved reports.
+
 ## What changed from the React version
 
 Nothing you can see, with two small exceptions:
