@@ -1363,6 +1363,12 @@ function renderPhaseFilters() {
     .join("");
 }
 
+// Only these two tiles open something today; every other tile is marked Coming soon.
+function isLiveService(title) {
+  const t = String(title || "").toLowerCase();
+  return t.indexOf("trainer observation") !== -1 || t.indexOf("trainer effectiveness") !== -1;
+}
+
 function renderServices() {
   const term = search.toLowerCase();
   const visible = services.filter(function (service) {
@@ -1373,12 +1379,14 @@ function renderServices() {
 
   serviceGridEl.innerHTML = visible
     .map(function (service) {
+      const live = isLiveService(service.title);
       return (
-        '<article class="service-tile ' + service.accent + " " + (service.featured ? "featured" : "") + '">' +
+        '<article class="service-tile ' + service.accent + " " + (service.featured ? "featured" : "") + (live ? " is-live" : " coming-soon") + '">' +
         '<div class="service-tile-top"><span class="service-number">' + service.phaseNumber + '</span><span class="service-type">' + service.type + "</span></div>" +
         '<div class="service-visual"><span class="service-orbit"></span><span class="service-icon">' + ic(service.icon, 24) + '</span><span class="service-arrow">' + ic("arrow-up-right", 17) + "</span></div>" +
-        '<div class="service-copy"><div class="service-phase">' + service.phase + " <span>•</span> " + service.status + "</div><h3>" + service.title + "</h3><p>" + service.description + "</p></div>" +
-        '<button class="service-open" data-open-service="' + service.title + '">Open service ' + ic("arrow-right", 15) + "</button>" +
+        '<div class="service-copy"><div class="service-phase">' + service.phase + " <span>•</span> " + (live ? service.status : "Coming soon") + "</div><h3>" + service.title + "</h3><p>" + service.description + "</p></div>" +
+        '<button class="service-open" data-open-service="' + service.title + '"' + (live ? "" : ' aria-disabled="true"') + ">" +
+        (live ? "Open service " + ic("arrow-right", 15) : "Coming soon") + "</button>" +
         "</article>"
       );
     })
@@ -1399,7 +1407,7 @@ serviceGridEl.addEventListener("click", function (event) {
   const btn = event.target.closest("[data-open-service]");
   if (!btn) return;
   if (window.ggOpenTool && window.ggOpenTool(btn.dataset.openService)) return;
-  toast(btn.dataset.openService + " is ready to explore in this demo.");
+  toast(btn.dataset.openService + " is coming soon.");
 });
 
 document.getElementById("service-search").addEventListener("input", function () {
@@ -1424,6 +1432,10 @@ document.getElementById("explore-diagnose").addEventListener("click", function (
 
 document.getElementById("dash-bell").addEventListener("click", function () {
   toast("No new notes. You’re all caught up.");
+});
+
+Array.from(document.querySelectorAll("[data-dash-top]")).forEach(function (el) {
+  el.addEventListener("click", function () { window.scrollTo({ top: 0, behavior: "smooth" }); });
 });
 
 document.getElementById("dash-brand").addEventListener("click", function () {

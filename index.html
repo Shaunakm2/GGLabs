@@ -469,6 +469,7 @@
     <!-- VIEW 3 — WORKSPACE / DASHBOARD                                        -->
     <!-- ==================================================================== -->
     <main class="dashboard-shell view" id="view-dashboard">
+      <div class="gg-glow" id="gg-glow" aria-hidden="true"></div>
       <header class="dashboard-header">
         <button class="brand-lockup" id="dash-brand">
           <span class="logo-mark"
@@ -514,12 +515,8 @@
           <h1>Good to see you,<br /><em id="dash-firstname"></em></h1>
           <p id="dash-lede"></p>
         </div>
-        <div class="dashboard-hero-art">
-          <div class="dashboard-art-core"><i data-i="wand-sparkles" data-s="25"></i></div>
-          <span class="dashboard-art-orbit one"></span>
-          <span class="dashboard-art-orbit two"></span>
-          <span class="dashboard-art-orbit three"></span>
-        </div>
+        <!-- L&D theories that drift and get nudged away from the cursor: assets/repel.js -->
+        <div class="fw-field" id="fw-field" aria-hidden="true"></div>
       </section>
       <section class="dashboard-content page-width" id="services">
         <div class="dashboard-toolbar">
@@ -555,9 +552,44 @@
           <div><span>01</span><small>useful next move</small></div>
         </div>
       </section>
-      <footer class="dashboard-footer page-width">
-        <span>© 2026 GG Learning Labs</span>
-        <button data-goto="home"><i data-i="log-out" data-s="14"></i> Sign out</button>
+      <footer class="site-footer dash-footer">
+        <div class="page-width">
+          <div class="footer-main">
+            <div class="footer-brand">
+              <button class="brand-lockup" data-dash-top>
+                <span class="logo-mark" aria-hidden="true">
+                  <span class="logo-dot logo-dot-a"></span>
+                  <span class="logo-dot logo-dot-b"></span>
+                  <span class="logo-dot logo-dot-c"></span>
+                </span>
+                <span>GG Learning Labs</span>
+              </button>
+              <p><span data-cms="footer.tagline1">One stop solution to everything L&amp;D.</span><br /><span data-cms="footer.tagline2">Thoughtfully, practically, together.</span></p>
+            </div>
+            <div class="footer-column">
+              <span>Your workspace</span>
+              <a href="#services">All services</a>
+              <button data-open-tool="tof">Trainer Observation</button>
+              <button data-open-tool="eff">Trainer Effectiveness</button>
+              <button data-open-tool="reports">My reports</button>
+            </div>
+            <div class="footer-column">
+              <span>Account</span>
+              <button data-goto="home"><i data-i="log-out" data-s="13"></i> Sign out</button>
+            </div>
+            <div class="footer-column">
+              <span>Elsewhere</span>
+              <a href="#contact">LinkedIn <i data-i="arrow-up-right" data-s="13"></i></a>
+              <a href="#contact">Instagram <i data-i="arrow-up-right" data-s="13"></i></a>
+              <a href="mailto:hello@gglearninglabs.com">Email us <i data-i="arrow-up-right" data-s="13"></i></a>
+            </div>
+          </div>
+          <div class="footer-bottom">
+            <span data-cms="footer.copyright">© 2026 GG Learning Labs</span>
+            <span data-cms="footer.line">Made for the people who make learning matter.</span>
+            <button data-dash-top>Back to top <i data-i="arrow-up-right" data-s="14"></i></button>
+          </div>
+        </div>
       </footer>
     </main>
 
@@ -617,5 +649,6 @@
     <script src="assets/tools-core.js"></script>
     <script src="assets/app.js"></script>
     <script src="assets/tools-ui.js"></script>
+    <script src="assets/repel.js"></script>
   </body>
 </html>

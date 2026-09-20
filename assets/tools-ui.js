@@ -345,10 +345,15 @@
     return true;
   };
 
+  // [data-open-tool="reports" | "tof" | "eff"] anywhere on the page (nav link, footer links).
   document.addEventListener("click", function (event) {
-    if (!event.target.closest("[data-open-tool]")) return;
+    const trigger = event.target.closest("[data-open-tool]");
+    if (!trigger) return;
     event.preventDefault();
-    if (typeof currentUser !== "undefined" && currentUser) openTool("reports");
+    if (typeof currentUser === "undefined" || !currentUser) return;
+    const which = trigger.dataset.openTool;
+    if (which === "reports") openTool("reports");
+    else window.ggOpenTool(which === "tof" ? "Trainer Observation" : "Trainer Effectiveness");
   });
 
   document.addEventListener("keydown", function (event) {
