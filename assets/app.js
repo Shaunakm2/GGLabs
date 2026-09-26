@@ -164,7 +164,20 @@ async function fbSignIn(email, password) {
   const profile = await fbReadProfile(data.localId, data.idToken);
   if (profile === null) { session = null; throw new Error("NO_PROFILE"); }
   if (profile.active === "false") { session = null; throw new Error("ACCESS_DISABLED"); }
+  if (profile.companyId) profile._company = await fbReadCompany(profile.companyId, data.idToken);
   return { email: data.email, meta: profile };
+}
+
+// The company a corporate login belongs to: its name, logo and the scoring/form it has set up.
+async function fbReadCompany(companyId, token) {
+  try {
+    const res = await fetch(FS + "/companies/" + companyId + "?key=" + FB.apiKey, { headers: { Authorization: "Bearer " + token } });
+    if (!res.ok) return null;
+    const doc = await res.json();
+    const out = { id: companyId };
+    Object.keys(doc.fields || {}).forEach(function (k) { out[k] = doc.fields[k].stringValue; });
+    return out;
+  } catch (e) { console.warn("Company read failed:", e.message); return null; }
 }
 
 // The person's name and role live in a users document keyed by their uid.
@@ -234,6 +247,7 @@ async function fbRestore() {
   };
   const profile = await fbReadProfile(data.user_id, data.id_token);
   if (profile === null || profile.active === "false") { session = null; clearAuth(); return null; }
+  if (profile.companyId) profile._company = await fbReadCompany(profile.companyId, data.id_token);
   return { email: saved.email, meta: profile };
 }
 
@@ -320,7 +334,9 @@ async function fbSaveReport(rec) {
     type: rec.type,
     title: rec.title || "",
     score: rec.score || "",
-    createdAt: new Date().toISOString(),
+    scoring: rec.scoring || "",
+    companyScoring: rec.companyScoring || "",
+    createdAt: rec.createdAt || new Date().toISOString(),
     payload: rec.payload,
   };
   const body = { fields: {} };
@@ -367,8 +383,181 @@ async function fbAllReports() {
   return out.sort(newestFirst);
 }
 
+/* ---- Helpers for the admin console ------------------------------------------ */
+
+// A random password nobody has to know: the person sets their own through the reset email.
+function genPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const a = new Uint32Array(16);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.from(a, function (n) { return chars[n % chars.length]; }).join("");
+}
+
+// Firebase emails the person a link to choose a new password.
+async function fbSendReset(email) {
+  const res = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=" + FB.apiKey, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestType: "PASSWORD_RESET", email: email }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(function () { return {}; });
+    throw new Error((data.error && data.error.message) || "HTTP " + res.status);
+  }
+}
+
+// An append-only record of who did what (Firestore `audit_log`). Never blocks the action it describes.
+function logAudit(action, target, detail) {
+  if (!FB || !session) return;
+  fbEnsureToken().then(function (token) {
+    const f = {
+      actor: session.uid,
+      actorName: (typeof currentUser !== "undefined" && currentUser && currentUser.name) || session.email || "",
+      action: action, target: String(target || ""), detail: String(detail || "").slice(0, 900),
+      createdAt: new Date().toISOString(),
+    };
+    const body = { fields: {} };
+    Object.keys(f).forEach(function (k) { body.fields[k] = { stringValue: f[k] }; });
+    return fetch(FS + "/audit_log?key=" + FB.apiKey, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify(body),
+    });
+  }).catch(function (e) { console.warn("Audit log write failed:", e.message); });
+}
+window.ggAudit = logAudit;
+
+// Optional Cloud Functions (see functions/README in FIREBASE-SETUP.md) that can really disable or delete a
+// Firebase Auth account. Off unless window.GG_FUNCTIONS.baseUrl is set in assets/backend-config.js.
+const FN_BASE = String((window.GG_FUNCTIONS && window.GG_FUNCTIONS.baseUrl) || "").replace(/\/$/, "");
+async function fbAdminFn(name, body) {
+  if (!FN_BASE) return { skipped: true };
+  const token = await fbEnsureToken();
+  const res = await fetch(FN_BASE + "/" + name, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+// Companies: name, logo (a small data URI) and the form/scoring they have built (Firestore `companies`).
+async function fbSaveCompany(id, fields) {
+  const token = await fbEnsureToken();
+  const keys = Object.keys(fields);
+  const body = { fields: {} };
+  keys.forEach(function (k) { body.fields[k] = { stringValue: String(fields[k]) }; });
+  const mask = keys.map(function (k) { return "updateMask.fieldPaths=" + encodeURIComponent(k); }).join("&");
+  const res = await fetch(FS + "/companies/" + id + "?" + mask + "&key=" + FB.apiKey, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+}
+
+let companiesLoaded = false, companiesCache = [];
+async function loadCompanyList() {
+  try { companiesCache = (await fbList("companies")).sort(function (a, b) { return String(a.fields.name || "").localeCompare(String(b.fields.name || "")); }); }
+  catch (e) { console.warn("Companies not loaded:", e.message); }
+}
+
+// The item library the super admin curates (Firestore `item_library`): the pool of Observation Form
+// items a corporate account can pick from to build its own checklist.
+let libraryLoaded = false;
+async function loadItemLibrary() {
+  try {
+    const rows = await fbList("item_library");
+    window.ggLibrary = rows.map(function (r) { return { id: r.id, label: r.fields.name || r.id, section: r.fields.team || "" }; })
+      .sort(function (a, b) { return a.label.localeCompare(b.label); });
+    if (window.ggLibraryReady) window.ggLibraryReady(window.ggLibrary);
+  } catch (e) { console.warn("Item library not loaded:", e.message); }
+}
+
+/* Trainer directory: Firestore `trainers`. Everyone signed in reads it (name suggestions); admins edit it. */
+function slugOf(name) { return String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "trainer"; }
+
+async function fbSaveTrainer(name, team) {
+  const token = await fbEnsureToken();
+  const res = await fetch(FS + "/trainers/" + slugOf(name) + "?key=" + FB.apiKey, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ fields: { name: { stringValue: name.trim() }, team: { stringValue: (team || "").trim() } } }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+}
+
+// The `item_library` collection reuses the same {name, team} shape as trainers, where `team` doubles
+// as the section tag items are grouped under when a company builds its checklist.
+async function fbSaveLibraryItem(label, section) {
+  const token = await fbEnsureToken();
+  const res = await fetch(FS + "/item_library/" + slugOf(label) + "?key=" + FB.apiKey, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ fields: { name: { stringValue: label.trim() }, team: { stringValue: (section || "").trim() } } }),
+  });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+}
+
+// Shrinks and re-encodes an uploaded image so a company logo never bloats a saved document or a PDF.
+function readLogoFile(file) {
+  return new Promise(function (resolve, reject) {
+    if (!file) { resolve(""); return; }
+    if (!/^image\/(png|jpeg|jpg)$/.test(file.type)) { reject(new Error("Logos must be a PNG or JPEG file.")); return; }
+    if (file.size > 4 * 1024 * 1024) { reject(new Error("That image is too large (max 4 MB).")); return; }
+    const reader = new FileReader();
+    reader.onerror = function () { reject(new Error("Could not read that file.")); };
+    reader.onload = function () {
+      const img = new Image();
+      img.onerror = function () { reject(new Error("That does not look like a valid image.")); };
+      img.onload = function () {
+        const size = 160, canvas = document.createElement("canvas");
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const scale = Math.min(size / img.width, size / img.height, 1);
+        const w = img.width * scale, h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+let trainersLoaded = false;
+async function loadTrainerDirectory() {
+  try {
+    const rows = await fbList("trainers");
+    window.ggTrainers = rows.map(function (r) { return r.fields.name || r.id; }).sort(function (a, b) { return a.localeCompare(b); });
+    if (window.ggSetTrainers) window.ggSetTrainers(window.ggTrainers);
+  } catch (e) { console.warn("Trainer directory not loaded:", e.message); }
+}
+
 // Email sign-ups (pop-up and footer form) go to Firestore `subscribers`; the email is the document id, so repeats collapse.
 const EMAIL_RE = /^[^\s@\/]+@[^\s@\/]+\.[^\s@\/]+$/;
+
+// Removing an address: anyone who knows the exact address can remove it (same trust as an unsubscribe link).
+async function unsubscribeEmail(raw) {
+  const email = String(raw || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email) || email.length > 254) return { ok: false, reason: "invalid" };
+  if (!FB) {
+    try {
+      const list = JSON.parse(localStorage.getItem("ggSubscribers") || "[]").filter(function (e) { return e !== email; });
+      localStorage.setItem("ggSubscribers", JSON.stringify(list));
+    } catch (e) {}
+    return { ok: true, local: true };
+  }
+  try {
+    const res = await fetch(FS + "/subscribers/" + encodeURIComponent(email) + "?key=" + FB.apiKey, { method: "DELETE" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return { ok: true };
+  } catch (e) {
+    console.warn("Unsubscribe failed:", e.message);
+    return { ok: false, reason: "network" };
+  }
+}
 
 async function subscribeEmail(raw, source) {
   const email = String(raw || "").trim().toLowerCase();
@@ -427,6 +616,14 @@ async function fbSignUp(email, password, meta) {
   });
   if (!pr.ok) throw new Error("The login was created but its profile could not be saved (HTTP " + pr.status + "). Check the Firestore rules.");
   return data;
+}
+
+// With the optional Cloud Function set up, logins are created on the server (so public sign-up can be switched
+// off in Firebase); otherwise the browser creates them through Firebase's sign-up endpoint.
+async function createLogin(email, password, meta) {
+  if (!FN_BASE) return backendSignUp(email, password, meta);
+  try { return await fbAdminFn("adminCreateUser", { email: email, password: password, name: meta.name, role: meta.role, title: meta.title || "" }); }
+  catch (e) { throw new Error(e.message === "HTTP 409" ? authErrorText("EMAIL_EXISTS") : "The server could not create the login (" + e.message + ")."); }
 }
 
 function authErrorText(msg) {
@@ -657,8 +854,8 @@ const services = [
   { phase: "Deliver", phaseNumber: "04", title: "Personalized Coaching", description: "A focused coaching journey with prompts, practice, and reflection built in.", type: "Journey", accent: "sky", icon: "zap", status: "For you" },
   { phase: "Assess", phaseNumber: "05", title: "Readiness Check", description: "See where capability is landing before you call the learning complete.", type: "Assessment", accent: "yellow", icon: "gauge", status: "Ready" },
   { phase: "Coach", phaseNumber: "06", title: "Manager as Coach", description: "Small, repeatable conversations that make coaching part of the week.", type: "Practice", accent: "peach", icon: "users", status: "For teams" },
-  { phase: "Observe", phaseNumber: "07", title: "Trainer Observation", description: "Replace subjective feedback with a thoughtful, calibrated observation rhythm.", type: "Rubric", accent: "aqua", icon: "eye", status: "For teams", featured: true },
-  { phase: "Measure", phaseNumber: "08", title: "Trainer Effectiveness", description: "Blend L1, TOF, throughput, utilization and attendance into one weighted score and a clear rating.", type: "Scorecard", accent: "sky", icon: "gauge", status: "For teams" },
+  { phase: "Observe", phaseNumber: "07", title: "Trainer Observation", description: "Replace subjective feedback with a thoughtful, calibrated observation rhythm.", type: "Rubric", accent: "aqua", icon: "eye", status: "For teams", featured: true, opens: "tof" },
+  { phase: "Measure", phaseNumber: "08", title: "Trainer Effectiveness", description: "Blend L1, TOF, throughput, utilization and attendance into one weighted score and a clear rating.", type: "Scorecard", accent: "sky", icon: "gauge", status: "For teams", opens: "eff" },
   { phase: "Measure", phaseNumber: "08", title: "Impact Dashboard", description: "Make the signal stronger than the spreadsheet with business-aligned measures.", type: "Dashboard", accent: "lavender", icon: "flame", status: "For teams" },
   { phase: "Improve", phaseNumber: "09", title: "Program Retrospective", description: "Close the loop with a repeatable moment to notice, learn, and improve.", type: "Workshop", accent: "green", icon: "lightbulb", status: "Ready" },
 ];
@@ -864,8 +1061,8 @@ function renderTimeline() {
       return (
         '<button class="timeline-node' + active + '" data-phase="' + phase.number + '" role="tab" aria-selected="' + (active ? "true" : "false") + '">' +
         '<span class="node-number">' + phase.number + "</span>" +
-        '<span class="node-dot ' + phase.accent + '">' + ic(phase.icon, 16) + "</span>" +
-        '<span class="node-title">' + phase.title + "</span>" +
+        '<span class="node-dot ' + esc(phase.accent) + '">' + ic(phase.icon, 16) + "</span>" +
+        '<span class="node-title">' + esc(phase.title) + "</span>" +
         "</button>"
       );
     })
@@ -882,21 +1079,21 @@ function renderPhaseDetail() {
     return;
   }
   popEl.hidden = false;
-  popEl.className = "timeline-pop " + shown.accent;
+  popEl.className = "timeline-pop " + String(shown.accent || "").replace(/[^a-z0-9_-]/gi, "");
   popEl.innerHTML =
     '<div class="pop-topline"><span>Phase ' + shown.number + "</span><span>Service map</span></div>" +
     '<div class="pop-head">' +
     '<span class="pop-icon">' + ic(shown.icon, 22) + "</span>" +
-    "<div><h3>" + shown.title + "</h3><p>" + shown.note + "</p></div>" +
+    "<div><h3>" + esc(shown.title) + "</h3><p>" + esc(shown.note) + "</p></div>" +
     "</div>" +
     '<div class="service-chips">' +
     shown.services
       .map(function (service) {
-        return '<button class="' + (selectedService === service ? "chosen" : "") + '" data-service="' + service + '">' + service + "</button>";
+        return '<button class="' + (selectedService === service ? "chosen" : "") + '" data-service="' + esc(service) + '">' + esc(service) + "</button>";
       })
       .join("") +
     "</div>" +
-    '<button class="detail-link" data-open-genie>Ask the genie about ' + shown.title.toLowerCase() + " " + ic("wand-sparkles", 16) + "</button>";
+    '<button class="detail-link" data-open-genie>Ask the genie about ' + esc(shown.title.toLowerCase()) + " " + ic("wand-sparkles", 16) + "</button>";
   positionPop(shown.number);
 }
 
@@ -917,13 +1114,13 @@ function renderNews() {
   newsGridEl.innerHTML = newsPosts
     .map(function (item, index) {
       return (
-        '<a class="news-card ' + item.color + '" href="' + item.url + '" target="_blank" rel="noreferrer">' +
+        '<a class="news-card ' + esc(item.color) + '" href="' + esc(safeUrl(item.url)) + '" target="_blank" rel="noreferrer">' +
         '<div class="news-card-top"><span>' + String(index + 1).padStart(2, "0") + "</span>" + ic("arrow-up-right", 17) + "</div>" +
         '<div class="news-visual"><span class="news-orbit orbit-one"></span><span class="news-orbit orbit-two"></span><span class="news-orbit orbit-three"></span><span class="news-spark">✦</span></div>' +
-        '<div class="news-meta">' + item.category + " <span>•</span> " + item.date + "</div>" +
-        "<h3>" + item.title + "</h3>" +
-        "<p>" + item.excerpt + "</p>" +
-        '<div class="source-link">Read on ' + item.source + " " + ic("arrow-right", 15) + "</div>" +
+        '<div class="news-meta">' + esc(item.category) + " <span>•</span> " + esc(item.date) + "</div>" +
+        "<h3>" + esc(item.title) + "</h3>" +
+        "<p>" + esc(item.excerpt) + "</p>" +
+        '<div class="source-link">Read on ' + esc(item.source) + " " + ic("arrow-right", 15) + "</div>" +
         "</a>"
       );
     })
@@ -936,12 +1133,12 @@ function renderMemberships() {
       return (
         '<article class="membership-card ' + (plan.featured ? "featured" : "") + '">' +
         (plan.featured ? '<div class="featured-ribbon">' + ic("sparkles", 13) + " Most useful place to start</div>" : "") +
-        '<div class="card-eyebrow">' + plan.eyebrow + "</div>" +
-        "<h3>" + plan.name + "</h3>" +
-        '<div class="price-line"><strong>' + plan.price + "</strong><span>" + plan.suffix + "</span></div>" +
-        "<p>" + plan.copy + "</p>" +
-        "<ul>" + plan.items.map(function (item) { return "<li>" + ic("check", 15) + " " + item + "</li>"; }).join("") + "</ul>" +
-        '<button class="membership-cta ' + (plan.featured ? "light" : "dark") + '" data-toast>' + plan.cta + " " + ic("arrow-up-right", 16) + "</button>" +
+        '<div class="card-eyebrow">' + esc(plan.eyebrow) + "</div>" +
+        "<h3>" + esc(plan.name) + "</h3>" +
+        '<div class="price-line"><strong>' + esc(plan.price) + "</strong><span>" + esc(plan.suffix) + "</span></div>" +
+        "<p>" + esc(plan.copy) + "</p>" +
+        "<ul>" + plan.items.map(function (item) { return "<li>" + ic("check", 15) + " " + esc(item) + "</li>"; }).join("") + "</ul>" +
+        '<button class="membership-cta ' + (plan.featured ? "light" : "dark") + '" data-toast>' + esc(plan.cta) + " " + ic("arrow-up-right", 16) + "</button>" +
         "</article>"
       );
     })
@@ -992,7 +1189,7 @@ function renderGenie() {
       '<div class="service-chips">' +
       geniePhase.services
         .map(function (service) {
-          return '<button class="' + (selectedService === service ? "chosen" : "") + '" data-service="' + service + '">' + service + "</button>";
+          return '<button class="' + (selectedService === service ? "chosen" : "") + '" data-service="' + esc(service) + '">' + esc(service) + "</button>";
         })
         .join("") +
       "</div>" +
@@ -1012,7 +1209,7 @@ function renderGenie() {
     '<option value=""' + (geniePhase ? "" : " selected") + ">Choose a phase\u2026</option>" +
     phases
       .map(function (phase) {
-        return '<option value="' + phase.number + '"' + (geniePhase && phase.number === geniePhase.number ? " selected" : "") + ">" + phase.number + " — " + phase.title + "</option>";
+        return '<option value="' + esc(phase.number) + '"' + (geniePhase && phase.number === geniePhase.number ? " selected" : "") + ">" + esc(phase.number) + " — " + esc(phase.title) + "</option>";
       })
       .join("") +
     "</select>" + ic("chevron-down", 15) + "</div>" +
@@ -1130,6 +1327,7 @@ document.getElementById("home-menu-btn").addEventListener("click", function () {
 document.getElementById("newsletter-form").addEventListener("submit", async function (event) {
   event.preventDefault();
   const input = document.getElementById("newsletter-email");
+  if (event.target.querySelector(".hp") && event.target.querySelector(".hp").value) { toast("You\u2019re on the list. Welcome to the lab notes."); return; } // bots fill the hidden field
   const r = await subscribeEmail(input.value, "footer");
   if (!r.ok) {
     toast(r.reason === "invalid"
@@ -1147,6 +1345,7 @@ document.getElementById("newsletter-form").addEventListener("submit", async func
 /* Email sign-up pop-up: opens on the homepage. Gone for good once someone subscribes;
    if closed, it stays away for the rest of that browser tab's session. */
 const signupVeil = document.getElementById("signup-veil");
+let signupOpenedAt = 0;
 
 function markSubscribed() {
   try { localStorage.setItem("ggSubscribed", "1"); } catch (e) {}
@@ -1160,6 +1359,7 @@ function signupSuppressed() {
 function openSignup() {
   if (currentUser || signupSuppressed() || (features && features.newsletter === false)) return;
   signupVeil.hidden = false;
+  signupOpenedAt = Date.now();
   hydrateIcons(signupVeil);
   document.getElementById("signup-email").focus();
 }
@@ -1183,6 +1383,8 @@ document.getElementById("signup-form").addEventListener("submit", async function
   const input = document.getElementById("signup-email");
   const note = document.getElementById("signup-note");
   const btn = event.target.querySelector("button[type=submit]");
+  // A person cannot type an address in a second; a filled hidden field is a bot. Both get a silent "thanks".
+  if (event.target.querySelector(".hp").value || Date.now() - signupOpenedAt < 1200) { note.textContent = "You\u2019re in. Watch your inbox."; return; }
   btn.disabled = true;
   const r = await subscribeEmail(input.value, "popup");
   btn.disabled = false;
@@ -1272,6 +1474,8 @@ function parseTools(text) {
 
 function userFromAccount(account) {
   const meta = account.meta || {};
+  const co = meta._company || null;
+  const company = co ? { id: co.id, name: co.name || "", logo: co.logo || "", scoringRaw: co.scoring || "", tofPicks: parseJson(co.tof) } : null;
   return {
     uid: session ? session.uid : "",
     name: meta.name || account.email.split("@")[0],
@@ -1279,7 +1483,9 @@ function userFromAccount(account) {
     role: meta.role || "individual",
     title: meta.title || "",
     tools: parseTools(meta.tools),
-    scoring: parseJson(meta.scoring),
+    scoring: window.GGTools.layerCfg(company && parseJson(company.scoringRaw), parseJson(meta.scoring)),
+    scoringRaw: meta.scoring || "",
+    company: company,
   };
 }
 
@@ -1328,6 +1534,8 @@ const dashboardEmptyEl = document.getElementById("dashboard-empty");
 function renderDashboard() {
   if (!currentUser) return;
   if (window.ggToolsHello) window.ggToolsHello(currentUser);
+  if (!trainersLoaded && FB && session) { trainersLoaded = true; loadTrainerDirectory(); }
+  if (!libraryLoaded && FB && session && currentUser && currentUser.role === "corporate") { libraryLoaded = true; loadItemLibrary(); }
   document.getElementById("profile-avatar").textContent = currentUser.name
     .split(" ")
     .map(function (word) { return word[0]; })
@@ -1358,34 +1566,43 @@ function renderPhaseFilters() {
   );
   phaseFiltersEl.innerHTML = list
     .map(function (phase) {
-      return '<button class="' + (activePhase === phase ? "selected" : "") + '" data-filter="' + phase + '">' + phase + "</button>";
+      return '<button class="' + (activePhase === phase ? "selected" : "") + '" data-filter="' + esc(phase) + '">' + esc(phase) + "</button>";
     })
     .join("");
 }
 
-// Only these two tiles open something today; every other tile is marked Coming soon.
-function isLiveService(title) {
-  const t = String(title || "").toLowerCase();
-  return t.indexOf("trainer observation") !== -1 || t.indexOf("trainer effectiveness") !== -1;
+// What a tile opens: "tof", "eff" or "" (Coming soon). Set per tile in Admin -> Tiles; tiles saved before
+// that setting existed are recognised by their title.
+function toolOf(service) {
+  if (service && (service.opens === "tof" || service.opens === "eff")) return service.opens;
+  if (service && service.opens === "") return "";
+  const t = String((service && service.title) || "").toLowerCase();
+  return t.indexOf("trainer observation") !== -1 ? "tof" : t.indexOf("trainer effectiveness") !== -1 ? "eff" : "";
 }
+function isLiveService(service) { return !!toolOf(service); }
 
 function renderServices() {
   const term = search.toLowerCase();
-  const visible = services.filter(function (service) {
+  let visible = services.filter(function (service) {
     const matchesPhase = activePhase === "All services" || service.phase === activePhase;
     const haystack = (service.title + " " + service.description + " " + service.type).toLowerCase();
     return matchesPhase && haystack.includes(term);
   });
 
+  // The two working tiles come first, then everything that is coming soon (original order kept within each group).
+  visible = visible
+    .filter(isLiveService)
+    .concat(visible.filter(function (service) { return !isLiveService(service); }));
+
   serviceGridEl.innerHTML = visible
     .map(function (service) {
-      const live = isLiveService(service.title);
+      const tool = toolOf(service), live = !!tool;
       return (
-        '<article class="service-tile ' + service.accent + " " + (service.featured ? "featured" : "") + (live ? " is-live" : " coming-soon") + '">' +
-        '<div class="service-tile-top"><span class="service-number">' + service.phaseNumber + '</span><span class="service-type">' + service.type + "</span></div>" +
+        '<article class="service-tile ' + esc(service.accent) + " " + (service.featured ? "featured" : "") + (live ? " is-live" : " coming-soon") + '">' +
+        '<div class="service-tile-top"><span class="service-number">' + esc(service.phaseNumber) + '</span><span class="service-type">' + esc(service.type) + "</span></div>" +
         '<div class="service-visual"><span class="service-orbit"></span><span class="service-icon">' + ic(service.icon, 24) + '</span><span class="service-arrow">' + ic("arrow-up-right", 17) + "</span></div>" +
-        '<div class="service-copy"><div class="service-phase">' + service.phase + " <span>•</span> " + (live ? service.status : "Coming soon") + "</div><h3>" + service.title + "</h3><p>" + service.description + "</p></div>" +
-        '<button class="service-open" data-open-service="' + service.title + '"' + (live ? "" : ' aria-disabled="true"') + ">" +
+        '<div class="service-copy"><div class="service-phase">' + esc(service.phase) + " <span>•</span> " + (live ? esc(service.status) : "Coming soon") + "</div><h3>" + esc(service.title) + "</h3><p>" + esc(service.description) + "</p></div>" +
+        '<button class="service-open" data-open-service="' + esc(service.title) + '" data-tool="' + tool + '"' + (live ? "" : ' aria-disabled="true"') + ">" +
         (live ? "Open service " + ic("arrow-right", 15) : "Coming soon") + "</button>" +
         "</article>"
       );
@@ -1395,6 +1612,16 @@ function renderServices() {
   dashboardEmptyEl.hidden = visible.length !== 0;
 }
 
+// Used by the theory chips on the landing page: show one phase's services and scroll to them.
+window.ggFilterPhase = function (phase) {
+  const known = services.some(function (s) { return s.phase === phase; });
+  activePhase = known ? phase : "All services";
+  renderPhaseFilters();
+  renderServices();
+  const target = document.getElementById("services");
+  if (target && target.scrollIntoView) target.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
 phaseFiltersEl.addEventListener("click", function (event) {
   const btn = event.target.closest("[data-filter]");
   if (!btn) return;
@@ -1403,10 +1630,12 @@ phaseFiltersEl.addEventListener("click", function (event) {
   renderServices();
 });
 
+// The whole tile is the click target, not just its button.
 serviceGridEl.addEventListener("click", function (event) {
-  const btn = event.target.closest("[data-open-service]");
+  const tile = event.target.closest(".service-tile");
+  const btn = tile && tile.querySelector("[data-open-service]");
   if (!btn) return;
-  if (window.ggOpenTool && window.ggOpenTool(btn.dataset.openService)) return;
+  if (btn.dataset.tool && window.ggOpenToolKey) { window.ggOpenToolKey(btn.dataset.tool); return; }
   toast(btn.dataset.openService + " is coming soon.");
 });
 
@@ -1462,6 +1691,9 @@ const modalBody = document.getElementById("modal-body");
 function signOut() {
   currentUser = null;
   session = null;
+  trainersLoaded = false;
+  libraryLoaded = false;
+  window.ggTrainers = [];
   clearAuth();
   if (window.ggResetTools) window.ggResetTools();
   showView("home");
@@ -1470,6 +1702,8 @@ function signOut() {
 function setMenuOpen(open) {
   profileMenu.hidden = !open;
   document.getElementById("admin-item").hidden = !(currentUser && currentUser.role === "admin");
+  const custItem = document.getElementById("customize-item");
+  if (custItem) custItem.hidden = !(currentUser && currentUser.role === "corporate");
   profileChip.setAttribute("aria-expanded", String(open));
   if (open && currentUser) {
     document.getElementById("menu-avatar").textContent = initials(currentUser.name);
@@ -1505,6 +1739,7 @@ profileMenu.addEventListener("click", function (event) {
   setMenuOpen(false);
   if (action === "theme") { toggleTheme(); return; }
   if (action === "admin") { openAdmin("brand"); return; }
+  if (action === "customize") { openCompanyStudio(); return; }
   if (action === "signout") {
     signOut();
     toast("Signed out. See you soon.");
@@ -1632,6 +1867,16 @@ modalBody.addEventListener("input", function (event) {
 });
 
 modalBody.addEventListener("change", function (event) {
+  if (event.target.id === "mu-role") {
+    const wrap = document.getElementById("mu-company-wrap");
+    if (wrap) wrap.style.display = event.target.value === "corporate" ? "" : "none";
+    return;
+  }
+  if (event.target.id === "mu-template") {
+    const t = templatesCache.filter(function (x) { return x.id === event.target.value; })[0];
+    if (t) { applyCfgToEditor(parseJson(t.fields.scoring)); toast("Template applied. Save to apply it to this person."); }
+    return;
+  }
   if (event.target.id === "rep-filter") { renderReportRows(); return; }
   if (event.target.id !== "hero-upload" || !event.target.files[0]) return;
   const reader = new FileReader();
@@ -1687,7 +1932,7 @@ function openAdmin(tab) {
     '<div class="admin-tabs">' +
     [["brand", "Brand"], ["copy", "Copy"], ["hero", "Hero"], ["phases", "Phases"],
      ["tiles", "Service tiles"], ["plans", "Plans"], ["posts", "Field notes"],
-     ["people", "Logins"], ["reports", "Reports"], ["subs", "Subscribers"], ["features", "Features"]]
+     ["people", "Logins"], ["companies", "Companies"], ["library", "Item Library"], ["trainers", "Trainers"], ["reports", "Reports"], ["analytics", "Analytics"], ["audit", "Audit"], ["subs", "Subscribers"], ["features", "Features"]]
       .map(function (t) {
         return '<button data-admin-tab="' + t[0] + '" class="' + (tab === t[0] ? "selected" : "") + '">' + t[1] + "</button>";
       })
@@ -1695,13 +1940,19 @@ function openAdmin(tab) {
     "</div>" +
     ({ brand: adminBrand, copy: adminCopy, hero: adminHero, phases: adminPhases,
        tiles: adminTiles, plans: adminPlans, posts: adminPosts, people: adminPeople,
-       reports: adminReports, subs: adminSubs, features: adminFeatures }[tab] || adminFeatures)();
+       companies: adminCompanies, library: adminLibrary, trainers: adminTrainers, reports: adminReports, analytics: adminAnalytics, audit: adminAudit, subs: adminSubs, features: adminFeatures }[tab] || adminFeatures)();
   document.querySelector(".modal").classList.add("wide");
   veil.hidden = false;
   hydrateIcons(modalBody);
-  if (tab === "people" && manageRec) updateMuTotal();
+  if (tab === "people" && manageRec) { updateMuTotal(); loadTemplates(); }
+  if (tab === "people" && !companiesLoaded) { companiesLoaded = true; loadCompanyList(); }
   if (tab === "people" && !manageRec) loadPeople();
   else if (tab === "reports") loadReports();
+  else if (tab === "companies") loadCompaniesTab();
+  else if (tab === "library") loadLibraryTab();
+  else if (tab === "trainers") loadTrainersAdmin();
+  else if (tab === "analytics") loadAnalytics();
+  else if (tab === "audit") loadAudit();
   else if (tab === "subs") loadSubs();
 }
 
@@ -1732,7 +1983,7 @@ function adminPeople() {
     '<div class="admin-grid">' +
     '<input id="nu-name" placeholder="Full name" />' +
     '<input id="nu-email" placeholder="email@company.com" />' +
-    '<input id="nu-pass" placeholder="Password (6+ characters)" />' +
+    '<input id="nu-pass" placeholder="Password (optional: blank = they get a set-password email)" />' +
     '<div class="select-wrap"><select id="nu-role">' +
     '<option value="individual">Individual</option><option value="corporate">Corporate L&D</option><option value="admin">Super admin</option>' +
     "</select>" + ic("chevron-down", 15) + "</div></div>" +
@@ -1782,6 +2033,23 @@ function muSwitch(attr, on, disabled) {
   return '<button type="button" class="switch ' + (on ? "on" : "") + '" ' + attr + ' role="switch" aria-checked="' + on + '"' + (disabled ? " disabled" : "") + "><span></span></button>";
 }
 
+// The Effectiveness weighting table + cut-offs: reused by the per-login editor and the company studio.
+function effScoringBlockHtml(cfg) {
+  const GG = window.GGTools;
+  const effRows = GG.EFF_KEYS.map(function (k) {
+    return "<tr><td>" + GG.EFF_LABELS[k] + "</td>" +
+      '<td><input type="number" step="any" min="0" data-mu-w="' + k + '" value="' + muNum(cfg.eff.weights[k]) + '" /></td>' +
+      '<td><input type="number" step="any" data-mu-min="' + k + '" value="' + muNum(cfg.eff.min[k]) + '" /></td>' +
+      '<td class="mu-check"><input type="checkbox" data-mu-gate="' + k + '"' + (cfg.eff.gate[k] ? " checked" : "") + " /></td></tr>";
+  }).join("");
+  return (
+    '<table class="mu-table"><thead><tr><th>Measure</th><th>Weight %</th><th>Minimum %</th><th>Forces Needs Improvement</th></tr></thead><tbody>' + effRows + "</tbody></table>" +
+    '<div class="mu-total" id="mu-total"></div>' +
+    '<div class="admin-grid"><label class="mu-sec"><span>Effective above (%)</span><input type="number" step="any" id="mu-effective" value="' + muNum(cfg.eff.effective) + '" /></label>' +
+    '<label class="mu-sec"><span>Satisfactory from (%)</span><input type="number" step="any" id="mu-satisfactory" value="' + muNum(cfg.eff.satisfactory) + '" /></label></div>'
+  );
+}
+
 function adminManageHtml(rec) {
   const GG = window.GGTools, f = rec.fields;
   const me = !!(session && rec.id === session.uid);
@@ -1811,17 +2079,24 @@ function adminManageHtml(rec) {
     '<div class="select-wrap"><select id="mu-role"' + (me ? " disabled" : "") + ">" +
     [["individual", "Individual"], ["corporate", "Corporate L&D"], ["admin", "Super admin"]].map(function (o) {
       return '<option value="' + o[0] + '"' + ((f.role || "individual") === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
-    }).join("") + "</select>" + ic("chevron-down", 15) + "</div></div></div>" +
+    }).join("") + "</select>" + ic("chevron-down", 15) + "</div>" +
+    '<div class="select-wrap" id="mu-company-wrap" style="' + ((f.role || "individual") === "corporate" ? "" : "display:none") + '"><select id="mu-company"><option value="">No company</option>' +
+    companiesCache.map(function (c) { return '<option value="' + esc(c.id) + '"' + (f.companyId === c.id ? " selected" : "") + ">" + esc(c.fields.name || c.id) + "</option>"; }).join("") +
+    "</select>" + ic("chevron-down", 15) + "</div></div>" +
 
     '<div class="mu-block"><strong>Access</strong>' +
     '<div class="pref-row"><div><strong>Can sign in</strong><span>' + (me ? "You cannot suspend yourself." : "Switch off to suspend this login. Nothing is deleted and their reports stay.") + "</span></div>" +
     muSwitch("data-mu-active", f.active !== "false", me) + "</div>" +
+    '<div class="pref-row"><div><strong>Password</strong><span>' + (f.email ? "Emails " + esc(f.email) + " a link to set a new password." : "No email is stored for this login.") + "</span></div>" +
+    '<button type="button" class="ghost-button" data-mu-reset-pw="' + esc(f.email || "") + '"' + (f.email ? "" : " disabled") + ">Send reset email</button></div>" +
     MANAGE_TOOLS.map(function (t) {
       return '<div class="pref-row"><div><strong>' + t[1] + "</strong><span>Whether this person can open the tool.</span></div>" + muSwitch('data-mu-tool="' + t[0] + '"', tools.indexOf(t[0]) !== -1) + "</div>";
     }).join("") + "</div>" +
 
     '<div class="mu-block"><strong>Trainer Effectiveness scoring</strong>' +
     '<p class="admin-note">Each measure\u2019s weight, its minimum, and whether falling below the minimum forces &ldquo;Needs Improvement&rdquo;. The defaults are the rules from the Excel workbook.</p>' +
+    '<div class="mu-templates"><div class="select-wrap"><select id="mu-template"><option value="">Start from a saved template\u2026</option></select>' + ic("chevron-down", 15) + "</div>" +
+    '<button type="button" class="ghost-button" data-mu-save-template>Save as template</button></div>' +
     '<table class="mu-table"><thead><tr><th>Measure</th><th>Weight %</th><th>Minimum %</th><th>Forces Needs Improvement</th></tr></thead><tbody>' + effRows + "</tbody></table>" +
     '<div class="mu-total" id="mu-total"></div>' +
     '<div class="admin-grid"><label class="mu-sec"><span>Effective above (%)</span><input type="number" step="any" id="mu-effective" value="' + muNum(cfg.eff.effective) + '" /></label>' +
@@ -1847,39 +2122,87 @@ function updateMuTotal() {
   box.classList.toggle("bad", !good);
 }
 
+let templatesCache = [];
+
+async function loadTemplates() {
+  const sel = document.getElementById("mu-template");
+  if (!sel) return;
+  try {
+    templatesCache = (await fbList("scoring_templates")).sort(function (a, b) { return String(a.fields.name).localeCompare(String(b.fields.name)); });
+    const el = document.getElementById("mu-template");
+    if (!el) return;
+    templatesCache.forEach(function (t) {
+      const o = document.createElement("option");
+      o.value = t.id; o.textContent = t.fields.name || t.id;
+      el.appendChild(o);
+    });
+  } catch (e) { console.warn("Templates not loaded:", e.message); }
+}
+
+// Put a scoring profile into the editor's fields.
+function applyCfgToEditor(cfg) {
+  const GG = window.GGTools, c = GG.normCfg(cfg), q = function (sel) { return modalBody.querySelector(sel); };
+  GG.EFF_KEYS.forEach(function (k) {
+    q('[data-mu-w="' + k + '"]').value = muNum(c.eff.weights[k]);
+    q('[data-mu-min="' + k + '"]').value = muNum(c.eff.min[k]);
+    q('[data-mu-gate="' + k + '"]').checked = !!c.eff.gate[k];
+  });
+  q("#mu-effective").value = muNum(c.eff.effective);
+  q("#mu-satisfactory").value = muNum(c.eff.satisfactory);
+  const sw = c.tof.sectionWeights, tw = q("[data-mu-tofw]");
+  tw.classList.toggle("on", !!sw); tw.setAttribute("aria-checked", String(!!sw));
+  Array.from(modalBody.querySelectorAll("[data-mu-sw]")).forEach(function (i, n) {
+    i.disabled = !sw; i.value = muNum(sw ? sw[n] : GG.TOF_SECTIONS[n].items.length);
+  });
+  updateMuTotal();
+}
+
+// Read and check the scoring fields. Throws a readable Error when something is wrong.
+function readManageCfg() {
+  const GG = window.GGTools;
+  const q = function (sel) { return modalBody.querySelector(sel); };
+  const on = function (sel) { const el = q(sel); return !!el && el.classList.contains("on"); };
+  const read = function (el) { return el.value.trim() === "" ? NaN : Number(el.value); };
+  const weights = {}, min = {}, gate = {};
+  let sum = 0;
+  GG.EFF_KEYS.forEach(function (k) {
+    weights[k] = read(q('[data-mu-w="' + k + '"]'));
+    min[k] = read(q('[data-mu-min="' + k + '"]'));
+    gate[k] = q('[data-mu-gate="' + k + '"]').checked;
+    if (!isFinite(weights[k]) || weights[k] < 0) throw new Error("Every weight must be a number, 0 or more.");
+    if (!isFinite(min[k])) throw new Error("Every minimum must be a number.");
+    sum += weights[k];
+  });
+  if (Math.abs(sum - 100) > 0.01) throw new Error("Weights must add up to 100% (now " + muNum(sum) + "%).");
+  const effective = read(q("#mu-effective")), satisfactory = read(q("#mu-satisfactory"));
+  if (!isFinite(effective) || !isFinite(satisfactory)) throw new Error("Enter both rating cut-offs.");
+  if (satisfactory > effective) throw new Error("Satisfactory cannot be above the Effective cut-off.");
+  let sectionWeights = null;
+  if (on("[data-mu-tofw]")) {
+    sectionWeights = Array.from(modalBody.querySelectorAll("[data-mu-sw]")).map(read);
+    if (sectionWeights.some(function (w) { return !isFinite(w) || w < 0; })) throw new Error("Section weights must be numbers, 0 or more.");
+    if (!(sectionWeights.reduce(function (a, b) { return a + b; }, 0) > 0)) throw new Error("At least one section needs a weight above 0.");
+  }
+  return GG.normCfg({ eff: { weights: weights, min: min, gate: gate, effective: effective, satisfactory: satisfactory }, tof: { sectionWeights: sectionWeights } });
+}
+
+// "active: true -> false; tools: tof,eff -> tof; scoring changed" for the audit log.
+function diffFields(before, after) {
+  return Object.keys(after).filter(function (k) { return String(before[k] === undefined ? "" : before[k]) !== String(after[k]); }).map(function (k) {
+    return k === "scoring" ? "scoring changed" : k + ": " + (before[k] === undefined ? "\\u2014" : before[k]) + " \\u2192 " + after[k];
+  }).join("; ");
+}
+
 // Read the editor, check it, save it. Returns a promise.
 function saveManagedLogin(uid) {
   const GG = window.GGTools;
   const q = function (sel) { return modalBody.querySelector(sel); };
   const on = function (sel) { const el = q(sel); return !!el && el.classList.contains("on"); };
-  const read = function (el) { return el.value.trim() === "" ? NaN : Number(el.value); };
-
   const name = q("#mu-name").value.trim();
   if (!name) return Promise.reject(new Error("Name cannot be empty."));
+  let cfg;
+  try { cfg = readManageCfg(); } catch (e) { return Promise.reject(e); }
 
-  const weights = {}, min = {}, gate = {};
-  let sum = 0;
-  for (const k of GG.EFF_KEYS) {
-    weights[k] = read(q('[data-mu-w="' + k + '"]'));
-    min[k] = read(q('[data-mu-min="' + k + '"]'));
-    gate[k] = q('[data-mu-gate="' + k + '"]').checked;
-    if (!isFinite(weights[k]) || weights[k] < 0) return Promise.reject(new Error("Every weight must be a number, 0 or more."));
-    if (!isFinite(min[k])) return Promise.reject(new Error("Every minimum must be a number."));
-    sum += weights[k];
-  }
-  if (Math.abs(sum - 100) > 0.01) return Promise.reject(new Error("Weights must add up to 100% (now " + muNum(sum) + "%)."));
-  const effective = read(q("#mu-effective")), satisfactory = read(q("#mu-satisfactory"));
-  if (!isFinite(effective) || !isFinite(satisfactory)) return Promise.reject(new Error("Enter both rating cut-offs."));
-  if (satisfactory > effective) return Promise.reject(new Error("Satisfactory cannot be above the Effective cut-off."));
-
-  let sectionWeights = null;
-  if (on("[data-mu-tofw]")) {
-    sectionWeights = Array.from(modalBody.querySelectorAll("[data-mu-sw]")).map(read);
-    if (sectionWeights.some(function (w) { return !isFinite(w) || w < 0; })) return Promise.reject(new Error("Section weights must be numbers, 0 or more."));
-    if (!(sectionWeights.reduce(function (a, b) { return a + b; }, 0) > 0)) return Promise.reject(new Error("At least one section needs a weight above 0."));
-  }
-
-  const cfg = GG.normCfg({ eff: { weights: weights, min: min, gate: gate, effective: effective, satisfactory: satisfactory }, tof: { sectionWeights: sectionWeights } });
   const fields = {
     name: name,
     title: q("#mu-title").value.trim(),
@@ -1889,8 +2212,18 @@ function saveManagedLogin(uid) {
   if (!(session && uid === session.uid)) {
     fields.role = q("#mu-role").value;
     fields.active = on("[data-mu-active]") ? "true" : "false";
+    fields.companyId = fields.role === "corporate" ? (q("#mu-company") ? q("#mu-company").value : "") : "";
   }
-  return fbUpdateUser(uid, fields);
+  const before = (peopleCache.filter(function (r) { return r.id === uid; })[0] || { fields: {} }).fields;
+  const changes = diffFields(before, fields);
+  return fbUpdateUser(uid, fields).then(function () {
+    logAudit("login_updated", uid, (before.name || fields.name) + ": " + (changes || "no changes"));
+    const wasActive = before.active !== "false";
+    if (fields.active !== undefined && (fields.active === "true") !== wasActive) {
+      return fbAdminFn("adminSetDisabled", { uid: uid, disabled: fields.active === "false" })
+        .catch(function (e) { toast("Saved, but the Firebase account itself could not be " + (fields.active === "false" ? "disabled" : "enabled") + " (" + e.message + ")."); });
+    }
+  });
 }
 
 /* ---- Reports tab (admin sees everyone's saved reports) ------------------- */
@@ -1914,6 +2247,7 @@ function renderReportRows() {
     ? rows.map(function (r) {
         return '<div class="admin-row"><div><strong>' + esc(r.title || "(untitled)") + "</strong><span>" + esc(r.name || r.email || r.uid) + " &middot; " +
           reportKind(r.type) + " &middot; " + esc(String(r.createdAt || "").slice(0, 16).replace("T", " ")) + (r.score ? " &middot; " + esc(r.score) : "") + "</span></div>" +
+          (function () { const v = window.GGTools.verifyReport(r); return v.ok ? "" : '<span class="role-pill suspended" title="' + esc(v.problems.join(". ")) + '">check</span>'; })() +
           '<button class="ghost-button" data-rep-admin-pdf="' + esc(r.id) + '">PDF</button>' +
           '<button class="icon-button" data-rep-del="' + esc(r.id) + '" aria-label="Delete report">' + ic("x", 14) + "</button></div>";
       }).join("")
@@ -1942,6 +2276,290 @@ async function loadReports() {
     if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load reports.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
   }
 }
+
+/* ---- Companies tab ------------------------------------------------------- */
+
+function logoImg(logo, size) {
+  return logo ? '<img class="admin-logo" width="' + size + '" height="' + size + '" src="' + logo + '" alt="" />' : '<span class="admin-logo admin-logo-empty" style="width:' + size + 'px;height:' + size + 'px"></span>';
+}
+
+function adminCompanies() {
+  return (
+    '<p class="admin-note">Companies (Firestore <code>companies</code>). Give each corporate account a company, so their logo and name appear on their downloaded PDFs, and they can build their own Observation checklist under &ldquo;Customize forms&rdquo; once you assign someone to it (Logins &rarr; Manage &rarr; Company).</p>' +
+    '<div class="admin-list" id="companies-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>' +
+    '<div class="admin-new"><strong>Add a company</strong><div class="admin-grid">' +
+    '<input id="nc-name" placeholder="Company name" />' +
+    '<label class="cm-file">Logo (PNG/JPEG, optional)<input id="nc-logo" type="file" accept="image/png,image/jpeg" /></label></div>' +
+    '<button class="auth-submit compact" data-add-company>Add company ' + ic("check", 15) + "</button></div>"
+  );
+}
+
+async function loadCompaniesTab() {
+  const box = document.getElementById("companies-list");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = '<div class="admin-row"><div><strong>Sign in with Firebase to manage companies.</strong></div></div>'; return; }
+  try {
+    await loadCompanyList();
+    const el = document.getElementById("companies-list");
+    if (!el) return;
+    el.innerHTML = companiesCache.length
+      ? companiesCache.map(function (c) {
+          return '<div class="admin-row"><div>' + logoImg(c.fields.logo, 32) + '<strong style="margin-left:10px">' + esc(c.fields.name || c.id) + "</strong><span>" +
+            (c.fields.tof ? "Custom Observation checklist" : "Default Observation form") + (c.fields.scoring ? " &middot; custom scoring" : "") + "</span></div>" +
+            '<button class="icon-button" data-del-company="' + esc(c.id) + '" aria-label="Remove company">' + ic("x", 14) + "</button></div>";
+        }).join("")
+      : '<div class="admin-row"><div><strong>No companies yet.</strong><span>Add one, then assign a corporate login to it.</span></div></div>';
+  } catch (e) {
+    const el = document.getElementById("companies-list");
+    if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load companies.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
+  }
+}
+
+/* ---- Item Library tab ---------------------------------------------------- */
+
+const LIBRARY_CAP = 30;
+let libraryCache = [];
+
+function adminLibrary() {
+  return (
+    '<p class="admin-note">The pool of Observation Form items (Firestore <code>item_library</code>) that corporate accounts pick from to build their own checklist. Give each one a section (for example &ldquo;Opening&rdquo;, &ldquo;Delivery&rdquo;) &mdash; that is how a company\u2019s picks are grouped. Aim for around ' + LIBRARY_CAP + '.</p>' +
+    '<div class="admin-list" id="library-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>' +
+    '<div class="admin-new"><strong>Add an item</strong><div class="admin-grid"><input id="nl-name" placeholder="Item text" /><input id="nl-team" placeholder="Section (e.g. Opening)" /></div>' +
+    '<button class="auth-submit compact" data-add-library>Add item ' + ic("check", 15) + "</button>" +
+    '<label>Or paste many, one per line (&ldquo;Item text, Section&rdquo;)</label><textarea id="nl-bulk" rows="4" placeholder="Started on time, Opening&#10;Handled questions well, Delivery"></textarea>' +
+    '<button class="ghost-button" data-bulk-library>Import list</button></div>'
+  );
+}
+
+async function loadLibraryTab() {
+  const box = document.getElementById("library-list");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = '<div class="admin-row"><div><strong>Sign in with Firebase to manage the item library.</strong></div></div>'; return; }
+  try {
+    libraryCache = (await fbList("item_library")).sort(function (a, b) { return String(a.fields.team || "").localeCompare(String(b.fields.team || "")) || String(a.fields.name).localeCompare(String(b.fields.name)); });
+    const el = document.getElementById("library-list");
+    if (!el) return;
+    el.innerHTML =
+      (libraryCache.length >= LIBRARY_CAP ? '<div class="admin-row"><div><strong>' + libraryCache.length + " items \u2014 that\u2019s plenty.</strong></div></div>" : "") +
+      (libraryCache.length
+        ? libraryCache.map(function (r) {
+            return '<div class="admin-row"><div><strong>' + esc(r.fields.name || r.id) + "</strong><span>" + esc(r.fields.team || "General") + "</span></div>" +
+              '<button class="icon-button" data-del-library="' + esc(r.id) + '" aria-label="Remove item">' + ic("x", 14) + "</button></div>";
+          }).join("")
+        : '<div class="admin-row"><div><strong>No items yet.</strong><span>Add a few below, around 25 to 30 is plenty.</span></div></div>');
+  } catch (e) {
+    const el = document.getElementById("library-list");
+    if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load the library.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
+  }
+}
+
+/* ---- Trainers tab ------------------------------------------------------- */
+
+let trainersCache = [];
+
+function adminTrainers() {
+  return (
+    '<p class="admin-note">The trainer directory (Firestore <code>trainers</code>). Everyone signed in gets these names as suggestions when typing a trainer, and the spelling is corrected to match, so one trainer is never split into two.</p>' +
+    '<div class="admin-list" id="trainers-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>' +
+    '<div class="admin-new"><strong>Add a trainer</strong><div class="admin-grid"><input id="nt-name" placeholder="Trainer name" /><input id="nt-team" placeholder="Team (optional)" /></div>' +
+    '<button class="auth-submit compact" data-add-trainer>Add trainer ' + ic("check", 15) + "</button>" +
+    '<label>Or paste many, one per line (&ldquo;Name, Team&rdquo;)</label><textarea id="nt-bulk" rows="4" placeholder="Nikita Shah, Mumbai&#10;Vandana Rao, Pune"></textarea>' +
+    '<button class="ghost-button" data-bulk-trainers>Import list</button></div>'
+  );
+}
+
+async function loadTrainersAdmin() {
+  const box = document.getElementById("trainers-list");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = '<div class="admin-row"><div><strong>Sign in with Firebase to manage trainers.</strong></div></div>'; return; }
+  try {
+    trainersCache = (await fbList("trainers")).sort(function (a, b) { return String(a.fields.name).localeCompare(String(b.fields.name)); });
+    const el = document.getElementById("trainers-list");
+    if (!el) return;
+    el.innerHTML = trainersCache.length
+      ? trainersCache.map(function (t) {
+          return '<div class="admin-row"><div><strong>' + esc(t.fields.name || t.id) + "</strong><span>" + esc(t.fields.team || "No team") + "</span></div>" +
+            '<button class="icon-button" data-del-trainer="' + esc(t.id) + '" aria-label="Remove trainer">' + ic("x", 14) + "</button></div>";
+        }).join("")
+      : '<div class="admin-row"><div><strong>No trainers yet.</strong><span>Add a few below.</span></div></div>';
+    window.ggTrainers = trainersCache.map(function (t) { return t.fields.name || t.id; });
+    if (window.ggSetTrainers) window.ggSetTrainers(window.ggTrainers);
+  } catch (e) {
+    const el = document.getElementById("trainers-list");
+    if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load trainers.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
+  }
+}
+
+/* ---- Analytics tab ------------------------------------------------------ */
+
+function adminAnalytics() {
+  return '<p class="admin-note">Built from every saved report. Each trainer\u2019s latest observation and effectiveness, the monthly trend, and who has not submitted this month.</p><div id="analytics-box"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>';
+}
+
+async function loadAnalytics() {
+  const box = document.getElementById("analytics-box");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = "<p>Sign in with Firebase to see analytics.</p>"; return; }
+  try {
+    const both = await Promise.all([fbList("users"), fbAllReports()]);
+    const el = document.getElementById("analytics-box");
+    if (!el) return;
+    const a = window.GGTools.analytics(both[0], both[1]);
+    const tile = function (label, value) { return '<div class="tt-tile"><span>' + label + "</span><strong>" + esc(value) + "</strong></div>"; };
+    const pctTxt = function (x) { return x === undefined || x === null ? "\u2014" : (x * 100).toFixed(1) + "%"; };
+    const bar = function (v) { return '<i class="an-bar" style="width:' + Math.max(0, Math.min(100, v)) + '%"></i>'; };
+    el.innerHTML =
+      '<div class="tt-kpis">' + tile("Saved reports", a.kpis.reports) + tile("This month", a.kpis.thisMonth) + tile("Active participants", a.kpis.activeParticipants) + tile("Submitted this month", a.kpis.submittedThisMonth + " / " + a.kpis.activeParticipants) + "</div>" +
+      "<h4 class=\"an-h\">Average effectiveness by month</h4>" +
+      (a.monthly.length ? '<table class="tt-dist an-table"><tbody>' + a.monthly.map(function (m) {
+        return "<tr><td>" + esc(m.label) + "</td><td class=\"an-barcell\">" + bar(m.avg) + "</td><td>" + m.avg.toFixed(1) + "% <small>(" + m.n + " trainer" + (m.n === 1 ? "" : "s") + ")</small></td></tr>";
+      }).join("") + "</tbody></table>" : "<p class=\"admin-note\">No effectiveness reports yet.</p>") +
+      "<h4 class=\"an-h\">Trainers</h4>" +
+      (a.trainers.length ? '<div class="tt-scroll"><table class="tt-table an-trainers"><thead><tr><th>Trainer</th><th>Latest observation</th><th>Latest effectiveness</th><th>Rating</th></tr></thead><tbody>' + a.trainers.map(function (t) {
+        return "<tr><td><b>" + esc(t.name) + "</b></td><td>" + pctTxt(t.tof) + "</td><td>" + (t.eff === undefined ? "\u2014" : t.eff.toFixed(2) + "%") + "</td><td>" +
+          (t.rating ? '<span class="tt-pill ' + (t.rating === "Effective" ? "effective" : t.rating === "Satisfactory" ? "satisfactory" : "needs") + '">' + esc(t.rating) + "</span>" : "\u2014") + "</td></tr>";
+      }).join("") + "</tbody></table></div>" : "<p class=\"admin-note\">No trainers in the reports yet.</p>") +
+      "<h4 class=\"an-h\">Rating mix (latest per trainer)</h4><p class=\"admin-note\">" + a.distribution.map(function (d) { return esc(d.rating) + ": " + d.count; }).join(" \u00B7 ") + "</p>" +
+      "<h4 class=\"an-h\">Not submitted this month</h4><p class=\"admin-note\">" + (a.missing.length ? a.missing.map(esc).join(", ") : "Everyone has submitted.") + "</p>";
+  } catch (e) {
+    const el = document.getElementById("analytics-box");
+    if (el) el.innerHTML = "<p>Could not build analytics (" + esc(e.message) + "). Check the Firestore rules.</p>";
+  }
+}
+
+/* ---- Audit tab ---------------------------------------------------------- */
+
+function adminAudit() {
+  return '<p class="admin-note">Who changed what (Firestore <code>audit_log</code>). Entries cannot be edited or deleted.</p><div class="admin-list" id="audit-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>';
+}
+
+async function loadAudit() {
+  const box = document.getElementById("audit-list");
+  if (!box) return;
+  if (!FB || !session) { box.innerHTML = '<div class="admin-row"><div><strong>Sign in with Firebase to see the audit log.</strong></div></div>'; return; }
+  try {
+    const rows = (await fbList("audit_log")).sort(function (a, b) { return String(b.fields.createdAt || "").localeCompare(String(a.fields.createdAt || "")); }).slice(0, 200);
+    const el = document.getElementById("audit-list");
+    if (!el) return;
+    el.innerHTML = rows.length
+      ? rows.map(function (r) {
+          const f = r.fields;
+          return '<div class="admin-row"><div><strong>' + esc(f.action) + " &middot; " + esc(f.target) + "</strong><span>" + esc(f.actorName || f.actor) + " &middot; " +
+            esc(String(f.createdAt || "").slice(0, 16).replace("T", " ")) + (f.detail ? " &middot; " + esc(f.detail) : "") + "</span></div></div>";
+        }).join("")
+      : '<div class="admin-row"><div><strong>Nothing logged yet.</strong></div></div>';
+  } catch (e) {
+    const el = document.getElementById("audit-list");
+    if (el) el.innerHTML = '<div class="admin-row"><div><strong>Could not load the audit log.</strong><span>' + esc(e.message) + " \u2014 check the Firestore rules.</span></div></div>";
+  }
+}
+
+/* ---- Company studio: a corporate account builds its own Observation checklist and
+   Effectiveness weighting, and sets its logo/name for its downloaded PDFs. ------------- */
+
+let csChecked = {};   // this render's checked library item ids, kept across re-renders of the checklist
+
+function csHtml() {
+  const co = currentUser.company;
+  if (!co) return '<p class="admin-note">Your login is not yet linked to a company. Ask an admin to set this under Logins &rarr; Manage &rarr; Company.</p>';
+  const cfg = window.GGTools.normCfg(parseJson(co.scoringRaw));
+  csChecked = {};
+  (co.tofPicks || []).forEach(function (sec) { (sec.ids || []).forEach(function (id) { csChecked[id] = true; }); });
+  const library = window.ggLibrary || [];
+  const grouped = {};
+  const order = [];
+  library.forEach(function (it) {
+    const tag = it.section || "General";
+    if (!grouped[tag]) { grouped[tag] = []; order.push(tag); }
+    grouped[tag].push(it);
+  });
+  return (
+    '<div class="mu-block"><strong>Your brand</strong><p class="admin-note">Shown on every PDF your team downloads.</p><div class="admin-grid">' +
+    '<input id="cs-name" placeholder="Company name" value="' + esc(co.name || "") + '" />' +
+    '<label class="cm-file">Logo (PNG/JPEG)<input id="cs-logo" type="file" accept="image/png,image/jpeg" /></label></div>' +
+    '<div class="cs-logo-preview">' + logoImg(co.logo, 48) + '<span id="cs-logo-note">' + (co.logo ? "Current logo" : "No logo yet") + "</span></div></div>" +
+
+    '<div class="mu-block"><strong>Observation Form checklist</strong>' +
+    '<p class="admin-note">Pick which items your team is observed on' + (library.length ? "" : " (ask an admin to add items to the library first)") +
+    '. Leave nothing picked to keep the standard 36-item form.</p>' +
+    order.map(function (tag) {
+      return '<div class="cs-group"><h4>' + esc(tag) + "</h4>" + grouped[tag].map(function (it) {
+        return '<label class="cs-item"><input type="checkbox" data-cs-item="' + esc(it.id) + '"' + (csChecked[it.id] ? " checked" : "") + " /> " + esc(it.label) + "</label>";
+      }).join("") + "</div>";
+    }).join("") +
+    '<p class="admin-note" id="cs-picked-note"></p></div>' +
+
+    '<div class="mu-block"><strong>Trainer Effectiveness weighting</strong>' +
+    '<p class="admin-note">Applies to everyone at your company, unless an admin sets a different weighting for one person. The defaults are the Excel rules.</p>' +
+    effScoringBlockHtml(cfg) + "</div>" +
+
+    '<div class="modal-actions"><button type="button" class="ghost-button" data-cs-reset>Reset weighting to defaults</button>' +
+    '<button type="button" class="auth-submit compact" data-cs-save>Save ' + ic("check", 15) + "</button></div>"
+  );
+}
+
+function csPickedNote() {
+  const n = document.querySelectorAll("[data-cs-item]:checked").length;
+  const el = document.getElementById("cs-picked-note");
+  if (el) el.textContent = n ? n + " item" + (n === 1 ? "" : "s") + " picked \u2014 your team will see a custom checklist." : "Nothing picked \u2014 your team sees the standard 36-item form.";
+}
+
+function openCompanyStudio() {
+  if (!currentUser || currentUser.role !== "corporate") return;
+  document.querySelector(".modal").classList.add("wide");
+  document.getElementById("modal-eyebrow").textContent = "Corporate";
+  document.getElementById("modal-title").textContent = "Customize forms";
+  modalBody.dataset.mode = "studio";
+  modalBody.innerHTML = currentUser.company ? '<p class="admin-note">Loading&hellip;</p>' : csHtml();
+  veil.hidden = false;
+  hydrateIcons(modalBody);
+  if (!currentUser.company) return;
+  const ready = function () { modalBody.innerHTML = csHtml(); hydrateIcons(modalBody); updateMuTotal(); csPickedNote(); };
+  if (libraryLoaded) ready(); else { libraryLoaded = true; loadItemLibrary().then(ready); }
+}
+
+modalBody.addEventListener("click", function (event) {
+  if (modalBody.dataset.mode !== "studio") return;
+  if (event.target.closest("[data-cs-reset]")) {
+    const D = window.GGTools.DEFAULT_CFG;
+    window.GGTools.EFF_KEYS.forEach(function (k) {
+      document.querySelector('[data-mu-w="' + k + '"]').value = muNum(D.eff.weights[k]);
+      document.querySelector('[data-mu-min="' + k + '"]').value = muNum(D.eff.min[k]);
+      document.querySelector('[data-mu-gate="' + k + '"]').checked = D.eff.gate[k];
+    });
+    document.getElementById("mu-effective").value = muNum(D.eff.effective);
+    document.getElementById("mu-satisfactory").value = muNum(D.eff.satisfactory);
+    updateMuTotal();
+    return;
+  }
+  if (event.target.closest("[data-cs-save]")) {
+    const co = currentUser.company;
+    const name = document.getElementById("cs-name").value.trim();
+    if (!name) { toast("Give your company a name."); return; }
+    let cfg;
+    try { cfg = readManageCfg(); } catch (e) { toast(e.message); return; }
+    const picked = Array.from(document.querySelectorAll("[data-cs-item]:checked")).map(function (el) { return el.dataset.csItem; });
+    const grouped = window.GGTools.groupByLibrarySection(picked, window.ggLibrary || []);
+    const file = document.getElementById("cs-logo").files[0];
+    readLogoFile(file).then(function (logo) {
+      const fields = { name: name, scoring: window.GGTools.cfgIsCustom(cfg) ? JSON.stringify(cfg) : "", tof: picked.length ? JSON.stringify(grouped) : "" };
+      if (logo) fields.logo = logo;
+      return fbSaveCompany(co.id, fields).then(function () { return { logo: logo }; });
+    }).then(function (r) {
+      logAudit("company_customized", co.id, name);
+      co.name = name; co.scoringRaw = window.GGTools.cfgIsCustom(cfg) ? JSON.stringify(cfg) : ""; co.tofPicks = picked.length ? grouped : null;
+      if (r.logo) co.logo = r.logo;
+      currentUser.scoring = window.GGTools.layerCfg(parseJson(co.scoringRaw), parseJson(currentUser.scoringRaw));
+      if (window.ggToolsHello) window.ggToolsHello(currentUser);
+      toast("Saved. Your team will see this the next time they sign in, or right away if they refresh.");
+      closeModal();
+    }).catch(function (e) { toast("Could not save: " + e.message); });
+  }
+});
+
+modalBody.addEventListener("change", function (event) {
+  if (event.target.matches("[data-cs-item]")) csPickedNote();
+});
 
 let subsCache = [];
 
@@ -2016,7 +2634,14 @@ function adminPosts() {
 }
 
 function esc(v) {
-  return String(v || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return String(v === null || v === undefined ? "" : v)
+    .replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;");
+}
+
+// Links typed into the admin console may only go to web or mail addresses.
+function safeUrl(u) {
+  const t = String(u === null || u === undefined ? "" : u).trim();
+  return /^(https?:|mailto:|#|\/)/i.test(t) ? t : "#";
 }
 
 modalBody.addEventListener("click", function (event) {
@@ -2038,7 +2663,11 @@ modalBody.addEventListener("click", function (event) {
   const manage = event.target.closest("[data-manage-user]");
   if (manage) {
     const rec = peopleCache.filter(function (r) { return r.id === manage.dataset.manageUser; })[0];
-    if (rec) { manageRec = rec; openAdmin("people"); updateMuTotal(); }
+    if (rec) {
+      manageRec = rec;
+      if (companiesLoaded) { openAdmin("people"); updateMuTotal(); }
+      else { companiesLoaded = true; loadCompanyList().then(function () { openAdmin("people"); updateMuTotal(); }); }
+    }
     return;
   }
   if (event.target.closest("[data-admin-back]")) { manageRec = null; openAdmin("people"); return; }
@@ -2055,21 +2684,41 @@ modalBody.addEventListener("click", function (event) {
     return;
   }
 
+  const resetPw = event.target.closest("[data-mu-reset-pw]");
+  if (resetPw) {
+    const email = resetPw.dataset.muResetPw;
+    fbSendReset(email)
+      .then(function () { logAudit("password_reset_sent", email, ""); toast("Reset email sent to " + email + "."); })
+      .catch(function (e) { toast("Could not send it: " + e.message); });
+    return;
+  }
+
+  if (event.target.closest("[data-mu-save-template]")) {
+    let cfg;
+    try { cfg = readManageCfg(); } catch (e) { toast(e.message); return; }
+    const name = (window.prompt("Name this scoring template:") || "").trim();
+    if (!name) return;
+    fbEnsureToken().then(function (token) {
+      return fetch(FS + "/scoring_templates/" + slugOf(name) + "?key=" + FB.apiKey, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ fields: { name: { stringValue: name }, scoring: { stringValue: JSON.stringify(cfg) } } }),
+      });
+    }).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      logAudit("template_saved", name, "");
+      toast("Template \u201C" + name + "\u201D saved.");
+      const sel = document.getElementById("mu-template");
+      if (sel && !templatesCache.some(function (t) { return t.id === slugOf(name); })) {
+        templatesCache.push({ id: slugOf(name), fields: { name: name, scoring: JSON.stringify(cfg) } });
+        const o = document.createElement("option"); o.value = slugOf(name); o.textContent = name; sel.appendChild(o);
+      }
+    }).catch(function (e) { toast("Could not save the template: " + e.message); });
+    return;
+  }
+
   if (event.target.closest("[data-mu-reset]")) {
-    const D = window.GGTools.DEFAULT_CFG;
-    window.GGTools.EFF_KEYS.forEach(function (k) {
-      modalBody.querySelector('[data-mu-w="' + k + '"]').value = D.eff.weights[k];
-      modalBody.querySelector('[data-mu-min="' + k + '"]').value = D.eff.min[k];
-      modalBody.querySelector('[data-mu-gate="' + k + '"]').checked = D.eff.gate[k];
-    });
-    document.getElementById("mu-effective").value = D.eff.effective;
-    document.getElementById("mu-satisfactory").value = D.eff.satisfactory;
-    const tw = modalBody.querySelector("[data-mu-tofw]");
-    tw.classList.remove("on"); tw.setAttribute("aria-checked", "false");
-    Array.from(modalBody.querySelectorAll("[data-mu-sw]")).forEach(function (i, n) {
-      i.disabled = true; i.value = window.GGTools.TOF_SECTIONS[n].items.length;
-    });
-    updateMuTotal();
+    applyCfgToEditor(window.GGTools.DEFAULT_CFG);
     toast("Scoring reset to the defaults. Save to apply.");
     return;
   }
@@ -2091,8 +2740,9 @@ modalBody.addEventListener("click", function (event) {
   const repDel = event.target.closest("[data-rep-del]");
   if (repDel) {
     if (!window.confirm("Delete this report permanently? The participant will lose it from their history.")) return;
+    const gone = reportsCache.filter(function (r) { return r.id === repDel.dataset.repDel; })[0];
     fbDelete("reports", repDel.dataset.repDel)
-      .then(function () { reportsCache = reportsCache.filter(function (r) { return r.id !== repDel.dataset.repDel; }); renderReportRows(); toast("Report deleted."); })
+      .then(function () { logAudit("report_deleted", repDel.dataset.repDel, gone ? gone.title + " (" + (gone.name || gone.uid) + ")" : ""); reportsCache = reportsCache.filter(function (r) { return r.id !== repDel.dataset.repDel; }); renderReportRows(); toast("Report deleted."); })
       .catch(function (err) { toast("Could not delete: " + err.message); });
     return;
   }
@@ -2100,23 +2750,109 @@ modalBody.addEventListener("click", function (event) {
   const delUser = event.target.closest("[data-del-user]");
   if (delUser) {
     if (!window.confirm("Remove this login from the database? They will no longer be able to sign in.")) return;
-    fbDelete("users", delUser.dataset.delUser)
-      .then(function () { toast("Login removed."); loadPeople(); })
+    const gone = peopleCache.filter(function (r) { return r.id === delUser.dataset.delUser; })[0];
+    fbAdminFn("adminDeleteUser", { uid: delUser.dataset.delUser })
+      .catch(function (e) { toast("The Firebase account could not be deleted (" + e.message + "). Delete it in Firebase Console."); })
+      .then(function () { return fbDelete("users", delUser.dataset.delUser); })
+      .then(function () { logAudit("login_removed", delUser.dataset.delUser, (gone && gone.fields.name) || ""); toast("Login removed."); loadPeople(); })
       .catch(function (err) { toast("Could not remove: " + err.message); });
     return;
   }
 
   if (event.target.closest("[data-subs-csv]")) { downloadSubsCsv(); return; }
 
+  if (event.target.closest("[data-add-company]")) {
+    const name = document.getElementById("nc-name").value.trim();
+    const file = document.getElementById("nc-logo").files[0];
+    if (!name) { toast("Type the company\u2019s name."); return; }
+    readLogoFile(file).then(function (logo) {
+      return fbSaveCompany(slugOf(name), { name: name, logo: logo });
+    }).then(function () { logAudit("company_added", name, ""); toast(name + " added."); loadCompaniesTab(); document.getElementById("nc-name").value = ""; })
+      .catch(function (e) { toast("Could not add: " + e.message); });
+    return;
+  }
+  const delCompany = event.target.closest("[data-del-company]");
+  if (delCompany) {
+    if (!window.confirm("Remove this company? Any corporate logins assigned to it keep working, but lose the custom branding and form until reassigned.")) return;
+    fbDelete("companies", delCompany.dataset.delCompany)
+      .then(function () { logAudit("company_removed", delCompany.dataset.delCompany, ""); toast("Company removed."); loadCompaniesTab(); })
+      .catch(function (e) { toast("Could not remove: " + e.message); });
+    return;
+  }
+
+  if (event.target.closest("[data-add-library]")) {
+    const name = document.getElementById("nl-name").value.trim();
+    if (!name) { toast("Type the item\u2019s text."); return; }
+    fbSaveLibraryItem(name, document.getElementById("nl-team").value)
+      .then(function () { logAudit("library_item_added", name, ""); toast("Added."); loadLibraryTab(); document.getElementById("nl-name").value = ""; })
+      .catch(function (e) { toast("Could not add: " + e.message); });
+    return;
+  }
+  if (event.target.closest("[data-bulk-library]")) {
+    const lines = document.getElementById("nl-bulk").value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+    if (!lines.length) { toast("Paste at least one line."); return; }
+    Promise.all(lines.map(function (l) {
+      const i = l.indexOf(",");
+      return fbSaveLibraryItem(i === -1 ? l : l.slice(0, i), i === -1 ? "" : l.slice(i + 1));
+    })).then(function () { logAudit("library_imported", lines.length + " items", ""); toast(lines.length + " item" + (lines.length === 1 ? "" : "s") + " imported."); document.getElementById("nl-bulk").value = ""; loadLibraryTab(); })
+      .catch(function (e) { toast("Import stopped: " + e.message); });
+    return;
+  }
+  const delLibrary = event.target.closest("[data-del-library]");
+  if (delLibrary) {
+    fbDelete("item_library", delLibrary.dataset.delLibrary)
+      .then(function () { logAudit("library_item_removed", delLibrary.dataset.delLibrary, ""); toast("Removed."); loadLibraryTab(); })
+      .catch(function (e) { toast("Could not remove: " + e.message); });
+    return;
+  }
+
+  if (event.target.closest("[data-add-trainer]")) {
+    const name = document.getElementById("nt-name").value.trim();
+    if (!name) { toast("Type the trainer\u2019s name."); return; }
+    fbSaveTrainer(name, document.getElementById("nt-team").value)
+      .then(function () { logAudit("trainer_added", name, ""); toast(name + " added."); loadTrainersAdmin(); document.getElementById("nt-name").value = ""; })
+      .catch(function (e) { toast("Could not add: " + e.message); });
+    return;
+  }
+  if (event.target.closest("[data-bulk-trainers]")) {
+    const lines = document.getElementById("nt-bulk").value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+    if (!lines.length) { toast("Paste at least one name."); return; }
+    Promise.all(lines.map(function (l) {
+      const i = l.indexOf(",");
+      return fbSaveTrainer(i === -1 ? l : l.slice(0, i), i === -1 ? "" : l.slice(i + 1));
+    })).then(function () { logAudit("trainers_imported", lines.length + " names", ""); toast(lines.length + " trainer" + (lines.length === 1 ? "" : "s") + " imported."); document.getElementById("nt-bulk").value = ""; loadTrainersAdmin(); })
+      .catch(function (e) { toast("Import stopped: " + e.message); });
+    return;
+  }
+  const delTrainer = event.target.closest("[data-del-trainer]");
+  if (delTrainer) {
+    fbDelete("trainers", delTrainer.dataset.delTrainer)
+      .then(function () { logAudit("trainer_removed", delTrainer.dataset.delTrainer, ""); toast("Trainer removed."); loadTrainersAdmin(); })
+      .catch(function (e) { toast("Could not remove: " + e.message); });
+    return;
+  }
+
   if (event.target.closest("[data-add-user]")) {
     const name = document.getElementById("nu-name").value.trim();
     const email = document.getElementById("nu-email").value.trim().toLowerCase();
-    const pass = document.getElementById("nu-pass").value.trim();
-    if (!name || email.indexOf("@") === -1 || !pass) { toast("Name, a valid email and a password, please."); return; }
+    const typed = document.getElementById("nu-pass").value.trim();
+    if (!name || !EMAIL_RE.test(email)) { toast("Name and a valid email, please."); return; }
+    if (typed && typed.length < 6) { toast("A typed password must be at least 6 characters."); return; }
     if (!FB || !session) { toast("Sign in with Firebase to add logins."); return; }
     const newRole = document.getElementById("nu-role").value;
-    backendSignUp(email, pass, { name: name, role: newRole, title: "" })
-      .then(function () { toast(name + " can now sign in."); openAdmin("people"); })
+    const generated = !typed, password = typed || genPassword();
+    createLogin(email, password, { name: name, role: newRole, title: "" })
+      .then(async function () {
+        logAudit("login_created", email, name + " (" + newRole + ")");
+        try {
+          await fbSendReset(email);
+          toast(name + " was added. A set-password email is on its way to " + email + ".");
+        } catch (e) {
+          toast(name + " was added, but the email could not be sent (" + e.message + ").");
+          if (generated) window.prompt("Copy this temporary password and give it to " + name + " (it is not shown again):", password);
+        }
+        openAdmin("people");
+      })
       .catch(function (err) { toast(err.message); });
     return;
   }
@@ -2502,7 +3238,43 @@ document.getElementById("dash-menu-btn").innerHTML = ic("menu", 20);
 renderPasswordToggle();
 hydrateIcons(document);
 
-setTimeout(openSignup, 1200);
+// How soon the pop-up appears is set in assets/backend-config.js (window.GG_SETTINGS.signupPopupDelayMs).
+setTimeout(openSignup, window.GG_SETTINGS && typeof window.GG_SETTINGS.signupPopupDelayMs === "number" ? window.GG_SETTINGS.signupPopupDelayMs : 1200);
+
+/* Unsubscribe dialog: the footer link, the pop-up's fine print, or a link like  site/#unsubscribe  or  site/?unsubscribe=you@x.com */
+const unsubVeil = document.getElementById("unsub-veil");
+function openUnsub(email) {
+  signupVeil.hidden = true;
+  try { sessionStorage.setItem("ggSignupSeen", "1"); } catch (e) {}
+  unsubVeil.hidden = false;
+  hydrateIcons(unsubVeil);
+  const input = document.getElementById("unsub-email");
+  input.value = email || "";
+  document.getElementById("unsub-note").textContent = "";
+  input.focus();
+}
+function closeUnsub() { unsubVeil.hidden = true; }
+document.addEventListener("click", function (event) {
+  if (!event.target.closest("[data-open-unsub]")) return;
+  event.preventDefault();
+  openUnsub();
+});
+document.getElementById("unsub-close").addEventListener("click", closeUnsub);
+unsubVeil.addEventListener("click", function (event) { if (event.target === unsubVeil) closeUnsub(); });
+document.addEventListener("keydown", function (event) { if (event.key === "Escape" && !unsubVeil.hidden) closeUnsub(); });
+document.getElementById("unsub-form").addEventListener("submit", async function (event) {
+  event.preventDefault();
+  const note = document.getElementById("unsub-note");
+  const r = await unsubscribeEmail(document.getElementById("unsub-email").value);
+  if (!r.ok) { note.textContent = r.reason === "invalid" ? "That email does not look right." : "Could not do that just now. Please try again."; return; }
+  try { localStorage.removeItem("ggSubscribed"); } catch (e) {}
+  note.textContent = "Done. That address will not get any more emails from us.";
+  toast("You\u2019ve been unsubscribed.");
+});
+(function () {
+  const q = new URLSearchParams(window.location.search).get("unsubscribe");
+  if (q !== null || window.location.hash === "#unsubscribe") openUnsub(q || "");
+})();
 
 fbRestore()
   .then(function (account) {

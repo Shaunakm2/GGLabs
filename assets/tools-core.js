@@ -75,11 +75,12 @@
   // Section score: COUNTIF(L,1) / COUNTIF(L,"<2")  -> "--" (null) when nothing is scored.
   // Overall score: the same formula over every item (the Excel form), unless an admin has set
   // section weights for this participant, in which case the section scores are averaged by weight.
-  function calcTof(ratings, cfg) {
+  function calcTof(ratings, cfg, sections) {
     ratings = ratings || {};
     cfg = normCfg(cfg);
+    const secDefs = Array.isArray(sections) && sections.length ? sections : TOF_SECTIONS;
     let allY = 0, allScored = 0, unrated = 0, total = 0;
-    const sections = TOF_SECTIONS.map(function (sec, i) {
+    const built = secDefs.map(function (sec, i) {
       let y = 0, scored = 0, un = 0;
       sec.items.forEach(function (_, j) {
         const r = ratings[i + "-" + j];
@@ -92,13 +93,15 @@
       return { title: sec.title, score: scored ? y / scored : null, yes: y, scored: scored, unrated: un };
     });
     let overall = allScored ? allY / allScored : null;
-    const sw = cfg.tof.sectionWeights;
+    // Section weights only apply to a form with the same number of sections they were set for; a custom
+    // form a company built later just falls back to the plain pooled score instead of breaking.
+    const sw = cfg.tof.sectionWeights && cfg.tof.sectionWeights.length === built.length ? cfg.tof.sectionWeights : null;
     if (sw) {
       let top = 0, bottom = 0;
-      sections.forEach(function (s, i) { if (s.score !== null) { top += sw[i] * s.score; bottom += sw[i]; } });
+      built.forEach(function (s, i) { if (s.score !== null) { top += sw[i] * s.score; bottom += sw[i]; } });
       overall = bottom > 0 ? top / bottom : null;
     }
-    return { sections: sections, overall: overall, unrated: unrated, total: total, weighted: !!sw };
+    return { sections: built, overall: overall, unrated: unrated, total: total, weighted: !!sw, sectionDefs: secDefs };
   }
 
   /* ------------------------------------------------------- 2. Effectiveness */
@@ -157,6 +160,24 @@
 
   function cfgIsCustom(cfg) { return JSON.stringify(normCfg(cfg)) !== JSON.stringify(normCfg(null)); }
 
+  // Combine a company's scoring profile with a person's own (the person's own fields win, field by field).
+  // Either side may be null/undefined/unparsable; that side then contributes nothing.
+  function layerCfg(companyRaw, personRaw) {
+    const c = (companyRaw && typeof companyRaw === "object") ? companyRaw : {};
+    const p = (personRaw && typeof personRaw === "object") ? personRaw : {};
+    const ce = c.eff || {}, pe = p.eff || {};
+    const out = { eff: { weights: {}, min: {}, gate: {} }, tof: {} };
+    EFF_KEYS.forEach(function (k) {
+      if (pe.weights && pe.weights[k] !== undefined) out.eff.weights[k] = pe.weights[k]; else if (ce.weights && ce.weights[k] !== undefined) out.eff.weights[k] = ce.weights[k];
+      if (pe.min && pe.min[k] !== undefined) out.eff.min[k] = pe.min[k]; else if (ce.min && ce.min[k] !== undefined) out.eff.min[k] = ce.min[k];
+      if (pe.gate && pe.gate[k] !== undefined) out.eff.gate[k] = pe.gate[k]; else if (ce.gate && ce.gate[k] !== undefined) out.eff.gate[k] = ce.gate[k];
+    });
+    out.eff.effective = pe.effective !== undefined ? pe.effective : ce.effective;
+    out.eff.satisfactory = pe.satisfactory !== undefined ? pe.satisfactory : ce.satisfactory;
+    out.tof.sectionWeights = (p.tof && p.tof.sectionWeights) || (c.tof && c.tof.sectionWeights) || null;
+    return out;
+  }
+
   // Values are entered and stored as percent points (92.7 means 92.7%).
   function calcRow(row, cfg) {
     const E = normCfg(cfg).eff;
@@ -197,9 +218,10 @@
       "Improvement areas are flagged below: " + EFF_KEYS.map(function (k) { return EFF_LABELS[k] + " " + trim(E.min[k]) + "%"; }).join(", ") + ".";
   }
 
-  function tofMethod(cfg) {
+  function tofMethod(cfg, sections) {
+    const n = (Array.isArray(sections) && sections.length ? sections : TOF_SECTIONS).length;
     const sw = normCfg(cfg).tof.sectionWeights;
-    if (!sw) return "Score = items rated Y \u00F7 items rated Y or N. Items marked N/A are left out.";
+    if (!sw || sw.length !== n) return "Score = items rated Y \u00F7 items rated Y or N. Items marked N/A are left out.";
     return "Overall = section scores averaged by weight (" + sw.map(function (w, i) { return (i + 1) + ": " + String(parseFloat(w.toFixed(2))); }).join(", ") +
       "). Each section score = items rated Y \u00F7 items rated Y or N; N/A items are left out.";
   }
@@ -290,7 +312,7 @@
     return doc;
   }
 
-  function band(doc, kicker, title, subtitle) {
+  function band(doc, kicker, title, subtitle, brand) {
     const W = doc.internal.pageSize.getWidth();
     doc.setFillColor(INK[0], INK[1], INK[2]);
     doc.rect(0, 0, W, subtitle ? 32 : 28, "F");
@@ -305,6 +327,12 @@
     if (subtitle) {
       doc.setFont("helvetica", "normal"); doc.setFontSize(9);
       doc.text(safe(subtitle), 14, 28);
+    }
+    if (brand && brand.logo && /^data:image\/(png|jpeg);base64,/.test(brand.logo)) {
+      try {
+        const size = 20, type = brand.logo.indexOf("data:image/png") === 0 ? "PNG" : "JPEG";
+        doc.addImage(brand.logo, type, W - 14 - size, 5, size, size);
+      } catch (e) { /* a broken logo image is skipped, never blocks the PDF */ }
     }
     doc.setTextColor(INK[0], INK[1], INK[2]);
     return (subtitle ? 32 : 28) + 8;
@@ -336,13 +364,13 @@
   }
 
   // ---- Trainer Observation Form -> PDF
-  function tofPdf(state, cfg) {
+  function tofPdf(state, cfg, sections, brand) {
     const doc = newDoc("portrait");
     const h = state.header || {};
-    const calc = calcTof(state.ratings, cfg);
+    const calc = calcTof(state.ratings, cfg, sections);
     const base = { styles: { font: "helvetica", fontSize: 8.5, cellPadding: 2.2, textColor: INK, lineColor: LINE, lineWidth: 0.2, overflow: "linebreak" }, margin: { left: 14, right: 14, bottom: 16 } };
 
-    let y = band(doc, "Learning & Development Team", "Trainer Observation Form");
+    let y = band(doc, (brand && brand.name) || "Learning & Development Team", "Trainer Observation Form", null, brand);
 
     doc.autoTable(Object.assign({}, base, {
       startY: y, theme: "grid",
@@ -375,13 +403,13 @@
     }));
     y = doc.lastAutoTable.finalY + 3;
     doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
-    let note = tofMethod(cfg) + (cfgIsCustom(cfg) ? " Custom scoring profile applied." : "");
+    let note = tofMethod(cfg, calc.sectionDefs) + (cfgIsCustom(cfg) ? " Custom scoring profile applied." : "");
     if (calc.unrated) note += " " + calc.unrated + " of " + calc.total + " items were not rated and are counted as N.";
     doc.text(doc.splitTextToSize(note, 182), 14, y + 3);
     y += 3 + doc.splitTextToSize(note, 182).length * 3.4 + 5;
 
     const pageH = doc.internal.pageSize.getHeight();
-    TOF_SECTIONS.forEach(function (sec, i) {
+    calc.sectionDefs.forEach(function (sec, i) {
       if (y > pageH - 50) { doc.addPage(); y = 16; }
       const rows = sec.items.map(function (label, j) {
         return [safe(label), (state.ratings || {})[i + "-" + j] || "\u2014", safe((state.comments || {})[i + "-" + j])];
@@ -427,14 +455,14 @@
   }
 
   // ---- Trainer Effectiveness -> PDF
-  function effPdf(rows, cfg) {
+  function effPdf(rows, cfg, brand) {
     const doc = newDoc("landscape");
     const W = doc.internal.pageSize.getWidth();
     const d = calcDashboard(rows, cfg);
     const base = { styles: { font: "helvetica", fontSize: 8.5, cellPadding: 2.2, textColor: INK, lineColor: LINE, lineWidth: 0.2, overflow: "linebreak" }, margin: { left: 14, right: 14, bottom: 16 } };
 
-    let y = band(doc, "Trainer performance", "Trainer Performance Dashboard",
-      d.monthLabel.charAt(0).toUpperCase() + d.monthLabel.slice(1) + " performance overview  |  Weighted effectiveness and improvement priorities");
+    let y = band(doc, (brand && brand.name) || "Trainer performance", "Trainer Performance Dashboard",
+      d.monthLabel.charAt(0).toUpperCase() + d.monthLabel.slice(1) + " performance overview  |  Weighted effectiveness and improvement priorities", brand);
 
     // KPI tiles
     const tiles = [
@@ -511,10 +539,221 @@
     return { doc: doc, filename: "Trainer-Effectiveness-" + (fileSlug(d.monthLabel) || "Report") + ".pdf" };
   }
 
+  /* ------------------------------------------------ checking saved reports */
+
+  function parsePayload(rec) {
+    try { const p = JSON.parse(rec.payload); return p && typeof p === "object" ? p : null; } catch (e) { return null; }
+  }
+
+  // Does a saved report agree with itself? The score is recomputed from the entries, and the scoring used
+  // must be the profile the admin set for that person (the database rules pin the second one at save time).
+  // rec.scoring is the person's OWN scoring override (rule-enforced: it must equal their users/{uid}.scoring
+  // field exactly). rec.companyScoring, when present, is a snapshot of their company's scoring at save time
+  // (not rule-enforced — the rules cannot parse JSON — so this is a consistency check, not a guarantee).
+  function verifyReport(rec) {
+    const p = parsePayload(rec);
+    if (!p) return { ok: false, problems: ["The report data could not be read"], recomputed: "" };
+    const problems = [];
+    if (rec.scoring !== undefined) {   // reports saved before this field existed are not checked for it
+      let assigned = null, companyAssigned = null;
+      try { assigned = rec.scoring ? JSON.parse(rec.scoring) : null; } catch (e) {}
+      try { companyAssigned = rec.companyScoring ? JSON.parse(rec.companyScoring) : null; } catch (e) {}
+      const expected = companyAssigned ? layerCfg(companyAssigned, assigned) : assigned;
+      if (JSON.stringify(normCfg(expected)) !== JSON.stringify(normCfg(p.cfg))) problems.push("Scoring differs from the profile the admin (and company) set");
+    }
+    let recomputed = "";
+    if (rec.type === "tof") recomputed = pct(calcTof(p.tof && p.tof.ratings, p.cfg).overall, 2);
+    else { const d = calcDashboard(p.rows, p.cfg); recomputed = d.avg === null ? "" : d.avg.toFixed(2) + "%"; }
+    if (recomputed !== (rec.score || "")) problems.push("Saved score " + (rec.score || "\u2014") + " but the entries score " + (recomputed || "\u2014"));
+    return { ok: problems.length === 0, problems: problems, recomputed: recomputed };
+  }
+
+  /* ------------------------------------------------------------- analytics */
+
+  // users: [{ id, fields: { name, role, active } }]   reports: saved report records (newest or oldest first)
+  function analytics(users, reports, nowISO) {
+    const now = nowISO ? new Date(nowISO) : new Date();
+    const ym = now.toISOString().slice(0, 7);
+    const list = (reports || []).slice().sort(function (a, b) { return String(b.createdAt || "").localeCompare(String(a.createdAt || "")); });
+    const trainers = {}, monthly = {};
+
+    list.forEach(function (r) {
+      const p = parsePayload(r);
+      if (!p) return;
+      if (r.type === "tof" && p.tof) {
+        const name = String((p.tof.header || {}).trainer || "").trim();
+        if (!name) return;
+        const t = trainers[name.toLowerCase()] = trainers[name.toLowerCase()] || { name: name };
+        if (t.tofAt === undefined) { t.tof = calcTof(p.tof.ratings, p.cfg).overall; t.tofAt = r.createdAt; }
+      } else if (r.type === "eff" && Array.isArray(p.rows)) {
+        p.rows.forEach(function (row) {
+          const name = String(row.name || "").trim();
+          if (!name) return;
+          const c = calcRow(row, p.cfg);
+          const t = trainers[name.toLowerCase()] = trainers[name.toLowerCase()] || { name: name };
+          if (c.eff === null) return;
+          if (t.effAt === undefined) { t.eff = c.eff; t.rating = c.rating; t.effAt = r.createdAt; }
+          const y = String(r.createdAt || "").slice(0, 4);
+          const label = (row.month || "?") + " " + y;
+          const m = monthly[label] = monthly[label] || { label: label, sum: 0, n: 0, order: y + String(MONTHS.indexOf(row.month) + 100) };
+          m.sum += c.eff; m.n++;
+        });
+      }
+    });
+
+    const trainerList = Object.keys(trainers).map(function (k) { return trainers[k]; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); });
+    const distribution = RATINGS.map(function (rt) {
+      return { rating: rt, count: trainerList.filter(function (t) { return t.rating === rt; }).length };
+    });
+    const monthlyList = Object.keys(monthly).map(function (k) { const m = monthly[k]; return { label: m.label, avg: m.sum / m.n, n: m.n, order: m.order }; })
+      .sort(function (a, b) { return a.order.localeCompare(b.order); });
+
+    const active = (users || []).filter(function (u) { return (u.fields || {}).active !== "false"; });
+    const thisMonth = list.filter(function (r) { return String(r.createdAt || "").slice(0, 7) === ym; });
+    const reporters = {};
+    thisMonth.forEach(function (r) { reporters[r.uid] = true; });
+    const missing = active.filter(function (u) { return !reporters[u.id]; }).map(function (u) { return (u.fields || {}).name || u.id; });
+
+    return {
+      kpis: { reports: list.length, thisMonth: thisMonth.length, activeParticipants: active.length, submittedThisMonth: active.length - missing.length },
+      trainers: trainerList, monthly: monthlyList, distribution: distribution, missing: missing,
+    };
+  }
+
+  /* ---------------------------------------------- non-Latin text and printing */
+
+  // The PDF file's built-in fonts only cover Western characters.
+  function needsUnicode(text) {
+    return /[^\n\x20-\x7E\xA0-\xFF\u2018\u2019\u201C\u201D\u2013\u2014\u2022\u2026\u20AC]/.test(String(text === null || text === undefined ? "" : text));
+  }
+
+  function h(x) {
+    return String(x === null || x === undefined ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  const PRINT_CSS =
+    "@page{size:A4 %ORIENT%;margin:14mm}*{box-sizing:border-box}body{font:12px/1.45 'Segoe UI',Roboto,'Noto Sans','Noto Sans Gujarati','Noto Sans Devanagari',Arial,sans-serif;color:#17243b;margin:0}" +
+    ".band{background:#17243b;color:#f5f1e9;padding:14px 18px;border-bottom:4px solid #c9ec62;margin-bottom:14px}.band small{color:#c9ec62;letter-spacing:.12em;text-transform:uppercase;font-weight:700;font-size:10px}.band h1{margin:4px 0 0;font-size:24px}" +
+    "table{border-collapse:collapse;width:100%;margin:0 0 14px}th,td{border:1px solid #d6dae2;padding:6px 8px;text-align:left;vertical-align:top}th{background:#17243b;color:#f5f1e9}td.k{background:#f4f6fa;font-weight:700;width:18%}" +
+    "h2{font-size:14px;margin:14px 0 6px}.y{background:#def2be;font-weight:700;text-align:center}.n{background:#fbd6cd;font-weight:700;text-align:center}.na{background:#e8eaef;font-weight:700;text-align:center}" +
+    ".note{color:#7a808c;font-size:10px;margin:0 0 12px}.tot td{background:#c9ec62;font-weight:700}.sec{page-break-inside:avoid}.kpis{display:flex;gap:8px;margin-bottom:12px}.kpi{flex:1;border:1px solid #d6dae2;background:#f4f6fa;padding:8px 10px}.kpi b{display:block;font-size:20px}.kpi span{font-size:9px;color:#7a808c;letter-spacing:.08em}" +
+    ".low{background:#fbd6cd}.good{background:#def2be}.mid{background:#fceebe}.pre{white-space:pre-wrap}";
+
+  function printDoc(title, orient, body) {
+    return "<!doctype html><html><head><meta charset=\"utf-8\"><title>" + h(title) + "</title><style>" + PRINT_CSS.replace("%ORIENT%", orient) + "</style></head><body>" + body + "</body></html>";
+  }
+
+  function printBand(brand, kicker, title) {
+    const logo = brand && brand.logo && /^data:image\/(png|jpeg);base64,/.test(brand.logo) ? '<img src="' + brand.logo + '" alt="" style="height:34px;float:right" />' : "";
+    return '<div class="band">' + logo + "<small>" + h((brand && brand.name) || kicker) + "</small><h1>" + h(title) + "</h1></div>";
+  }
+
+  // The same report as tofPdf, as a web page the browser can print or "Save as PDF" in any language.
+  function tofPrintHtml(state, cfg, sections, brand) {
+    const hd = state.header || {}, c = calcTof(state.ratings, cfg, sections), ratings = state.ratings || {}, comments = state.comments || {};
+    let body = printBand(brand, "Learning &amp; Development Team", "Trainer Observation Form") +
+      "<table><tr><td class=\"k\">Trainer name</td><td>" + h(hd.trainer) + "</td><td class=\"k\">Evaluator</td><td>" + h(hd.evaluator) + "</td></tr>" +
+      "<tr><td class=\"k\">Observation date</td><td>" + h(fmtDate(hd.date)) + "</td><td class=\"k\">Observation time</td><td>" + h(fmtTime(hd.time)) + "</td></tr>" +
+      "<tr><td class=\"k\">Class / topic</td><td>" + h(hd.topic) + "</td><td class=\"k\">Duration (mins)</td><td>" + h(hd.duration) + "</td></tr></table>" +
+      "<h2>Score summary</h2><table><tr><th>Section</th><th style=\"width:90px\">Score</th></tr>" +
+      c.sections.map(function (s) { return "<tr><td>" + h(s.title) + "</td><td>" + pct(s.score, 0) + "</td></tr>"; }).join("") +
+      "<tr class=\"tot\"><td>Overall Score</td><td>" + pct(c.overall, 2) + "</td></tr></table>" +
+      '<p class="note">' + h(tofMethod(cfg, c.sectionDefs)) + (c.unrated ? " " + c.unrated + " of " + c.total + " items were not rated and are counted as N." : "") + (cfgIsCustom(cfg) ? " Custom scoring profile applied." : "") + "</p>";
+    c.sectionDefs.forEach(function (sec, i) {
+      body += '<div class="sec"><h2>' + h(sec.title) + " &mdash; " + pct(c.sections[i].score, 0) + "</h2><table><tr><th>Item</th><th style=\"width:60px\">Rating</th><th style=\"width:32%\">Comments</th></tr>" +
+        sec.items.map(function (label, j) {
+          const r = ratings[i + "-" + j];
+          return "<tr><td>" + h(label) + "</td><td class=\"" + (r === "Y" ? "y" : r === "N" ? "n" : r === "N/A" ? "na" : "") + "\">" + (r || "\u2014") + "</td><td>" + h(comments[i + "-" + j]) + "</td></tr>";
+        }).join("") + "</table></div>";
+    });
+    const notes = state.notes || {};
+    [["Strengths", notes.strengths], ["Areas for improvement", notes.improve], ["Recommendations", notes.recommendations]].forEach(function (n) {
+      body += '<div class="sec"><h2>' + n[0] + '</h2><table><tr><td class="pre">' + (h(n[1]).trim() || "\u2014") + "</td></tr></table></div>";
+    });
+    return printDoc("Trainer Observation Form", "portrait", body);
+  }
+
+  function effPrintHtml(rows, cfg, brand) {
+    const d = calcDashboard(rows, cfg);
+    const body = printBand(brand, "Trainer performance", "Trainer Performance Dashboard") +
+      '<div class="kpis"><div class="kpi"><span>COMPLETED RECORDS</span><b>' + d.records + '</b></div><div class="kpi"><span>AVG EFFECTIVENESS</span><b>' + (d.avg === null ? "\u2014" : d.avg.toFixed(2) + "%") +
+      '</b></div><div class="kpi"><span>EFFECTIVE TRAINERS</span><b>' + d.counts["Effective"] + '</b></div><div class="kpi"><span>NEEDS IMPROVEMENT</span><b>' + d.counts["Needs Improvement"] + "</b></div></div>" +
+      "<p>" + h(d.summary) + "</p><h2>Trainer scorecard</h2><table><tr><th>Trainer</th><th>Month</th><th>L1 Score</th><th>TOF</th><th>Throughput</th><th>Utilization</th><th>Attendance</th><th>Effectiveness</th><th>Rating</th><th>Area of improvement</th></tr>" +
+      (d.list.length ? d.list.map(function (c) {
+        const r = c.row;
+        return "<tr><td><b>" + h(r.name) + "</b></td><td>" + h(r.month) + "</td>" + EFF_KEYS.map(function (k) {
+          return '<td class="' + (c.complete && c.flags.indexOf(k) !== -1 ? "low" : "") + '">' + trimPts(r[k]) + "</td>";
+        }).join("") + "<td><b>" + (c.eff === null ? "\u2014" : pts(c.eff, 2)) + '</b></td><td class="' +
+          (c.rating === "Effective" ? "good" : c.rating === "Satisfactory" ? "mid" : c.rating === "Needs Improvement" ? "low" : "") + '"><b>' + h(c.rating) + "</b></td><td>" + h(c.improve) + "</td></tr>";
+      }).join("") : '<tr><td colspan="10">No trainer records yet.</td></tr>') +
+      "</table><h2>Rating distribution</h2><table style=\"width:60%\"><tr><th>Rating</th><th>Count</th><th>Share</th></tr>" +
+      d.dist.map(function (r) { return "<tr><td>" + r.rating + "</td><td>" + r.count + "</td><td>" + pct(r.share, 0) + "</td></tr>"; }).join("") + "</table>" +
+      '<p class="note">' + h(effMethod(cfg)) + (cfgIsCustom(cfg) ? " Custom scoring profile applied." : "") + " Rows without a trainer name are not counted.</p>";
+    return printDoc("Trainer Performance Dashboard", "landscape", body);
+  }
+
+  /* ------------------------------------------ load the PDF libraries on demand */
+
+  let pdfPromise = null;
+  function pdfReady() {
+    return !!(root.jspdf && root.jspdf.jsPDF && root.jspdf.jsPDF.API && typeof root.jspdf.jsPDF.API.autoTable === "function");
+  }
+  // The two PDF libraries (about 400 KB) are only fetched the first time someone makes a PDF.
+  function loadPdfLibs() {
+    if (pdfReady()) return Promise.resolve();
+    if (pdfPromise) return pdfPromise;
+    if (typeof document === "undefined") return Promise.reject(new Error("The PDF library is not available here."));
+    const add = function (src) {
+      return new Promise(function (resolve, reject) {
+        const el = document.createElement("script");
+        el.src = src; el.onload = resolve;
+        el.onerror = function () { reject(new Error("Could not load " + src)); };
+        document.head.appendChild(el);
+      });
+    };
+    pdfPromise = add("assets/vendor/jspdf.umd.min.js")
+      .then(function () { return add("assets/vendor/jspdf.plugin.autotable.min.js"); })
+      .then(function () { if (!pdfReady()) throw new Error("The PDF library did not load."); })
+      .catch(function (e) { pdfPromise = null; throw e; });
+    return pdfPromise;
+  }
+
+  // Turn a company's picks from the library ({title, ids:[...]}[]) into TOF_SECTIONS-shaped sections.
+  // Unknown ids (an item the super admin later removed) are quietly dropped. An empty result means "use the
+  // default Excel form", so the caller always falls back safely.
+  function buildSections(picks, library) {
+    if (!Array.isArray(picks) || !picks.length || !Array.isArray(library)) return null;
+    const byId = {};
+    library.forEach(function (it) { byId[it.id] = it; });
+    const out = picks.map(function (sec) {
+      const items = (sec.ids || []).map(function (id) { return byId[id] ? byId[id].label : null; }).filter(Boolean);
+      return { title: String(sec.title || "Section").trim() || "Section", items: items };
+    }).filter(function (sec) { return sec.items.length > 0; });
+    return out.length ? out : null;
+  }
+
+  // Group a company's chosen library-item ids into sections by each item's own `section` tag
+  // (the grouping the super admin gave it), in the library's own order. Feeds into buildSections.
+  function groupByLibrarySection(chosenIds, library) {
+    if (!Array.isArray(chosenIds) || !chosenIds.length || !Array.isArray(library)) return [];
+    const chosen = {};
+    chosenIds.forEach(function (id) { chosen[id] = true; });
+    const order = [], bucket = {};
+    library.forEach(function (it) {
+      if (!chosen[it.id]) return;
+      const tag = String(it.section || "General").trim() || "General";
+      if (!bucket[tag]) { bucket[tag] = []; order.push(tag); }
+      bucket[tag].push(it.id);
+    });
+    return order.map(function (tag) { return { title: tag, ids: bucket[tag] }; });
+  }
+
   root.GGTools = {
     TOF_SECTIONS: TOF_SECTIONS, EFF_KEYS: EFF_KEYS, EFF_LABELS: EFF_LABELS, RATINGS: RATINGS, MONTHS: MONTHS,
     DEFAULT_CFG: DEFAULT_CFG, normCfg: normCfg, cfgIsCustom: cfgIsCustom, effMethod: effMethod, tofMethod: tofMethod,
     calcTof: calcTof, calcRow: calcRow, calcDashboard: calcDashboard,
     pct: pct, pts: pts, num: num, tofPdf: tofPdf, effPdf: effPdf,
+    verifyReport: verifyReport, analytics: analytics, needsUnicode: needsUnicode, tofPrintHtml: tofPrintHtml, effPrintHtml: effPrintHtml,
+    loadPdfLibs: loadPdfLibs, parsePayload: parsePayload, layerCfg: layerCfg, buildSections: buildSections, groupByLibrarySection: groupByLibrarySection,
   };
 })(typeof window !== "undefined" ? window : globalThis);

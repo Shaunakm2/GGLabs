@@ -64,6 +64,8 @@ Email sign-ups and saved reports need the `subscribers` and `reports` rules from
 
 **Participants (Admin console → Logins → Manage):** suspend or reinstate a login, switch each trainer tool on or off for them, and set their scoring: the weight, minimum and "forces Needs Improvement" flag for each Effectiveness measure, the Effective / Satisfactory cut-offs, and optional section weights for the Observation Form. Each saved report stores the scoring that was used. Admin → Reports lists everyone's saved reports.
 
+**Corporate accounts:** an admin creates a **Companies** entry (name + logo) and assigns a corporate login to it in Manage. That company's own account can then go to their profile menu → **Customize forms** to set their logo/name (used on every PDF their team downloads), pick which items from **Admin → Item Library** make up their own Observation Form checklist, and set their own Effectiveness weighting — applied to everyone at the company unless a person has their own personal override. See `FIREBASE-SETUP.md` → "Corporate accounts" for the walkthrough.
+
 ## What changed from the React version
 
 Nothing you can see, with two small exceptions:
@@ -72,3 +74,8 @@ Nothing you can see, with two small exceptions:
 - **Theme** is applied before the page paints, so switching to dark mode no longer flashes light first.
 
 Everything else — markup, class names, stylesheet, icons, copy, interactions — is carried over as-is. The icons are inlined SVGs from the same Lucide set, so the site needs no internet connection except for the Google Fonts (Poppins and Raleway).
+
+
+## Tests
+
+`npm install` once, then `npm test` runs three suites: the scoring rules against fixtures produced from your Excel files (`tests/core.test.js`), the PDF builders (`tests/pdf.test.js`), and a simulated-browser run of the whole site against a fake Firebase (`tests/smoke.test.js`). `npm run test:rules` runs the Firestore rules on Google's emulator. Without installing anything, open `rules-check.html` in a browser to check your real rules (see `FIREBASE-SETUP.md`, hardening step 1). `QA.md` lists what still has to be checked by eye in a real browser.

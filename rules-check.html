@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Firestore rules check</title>
+<style>
+  body { font: 14px/1.5 system-ui, "Segoe UI", Arial, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 18px; color: #17243b; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  fieldset { border: 1px solid #d6dae2; margin: 14px 0; padding: 10px 14px 14px; }
+  legend { font-weight: 700; padding: 0 6px; }
+  label { display: block; font-size: 12px; font-weight: 600; margin-top: 8px; }
+  input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #b9bfcb; font: inherit; }
+  button { background: #17243b; color: #fff; border: 0; padding: 11px 20px; font: inherit; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: wait; }
+  table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+  td { border-top: 1px solid #e3e6ec; padding: 6px 8px; vertical-align: top; }
+  td.s { width: 28px; font-weight: 700; }
+  .pass { color: #1c7a3a; } .fail { color: #b3261e; }
+  tr.fail td { background: #fdeceb; }
+  #summary { margin-top: 16px; font-weight: 700; font-size: 16px; }
+  .note { font-size: 12px; color: #5b6472; }
+</style>
+</head>
+<body>
+<h1>Firestore rules check</h1>
+<p>This page tests your <strong>real</strong> database rules from your browser. Nothing to install. It signs in as two logins, tries about 40 things that
+should be allowed or refused, then cleans up after itself.</p>
+<p class="note">If it says a password was not accepted, it now names which login. Tip: type the passwords yourself (browsers sometimes fill saved ones into the wrong box).</p>
+<p class="note">Use a <strong>dedicated test participant</strong> (create one in the admin console: role Individual). For a minute the page changes that
+person's access and scoring settings to test them, then puts them back exactly as they were. Passwords are used only for this run and are not stored.
+The page leaves one or two harmless lines in the Audit tab, because the audit log cannot be deleted by design.</p>
+
+<form id="f">
+  <fieldset><legend>Admin login</legend>
+    <label for="ae">Email</label><input id="ae" type="email" autocomplete="off" placeholder="the admin you use on the site" />
+    <label for="ap">Password</label><input id="ap" type="password" autocomplete="new-password" />
+  </fieldset>
+  <fieldset><legend>Test participant (not an admin)</legend>
+    <label for="pe">Email</label><input id="pe" type="email" autocomplete="off" placeholder="a normal (non-admin) login" />
+    <label for="pp">Password</label><input id="pp" type="password" autocomplete="new-password" />
+  </fieldset>
+  <button id="run" type="submit">Run the checks</button>
+</form>
+
+<div id="summary" aria-live="polite"></div>
+<table id="out"></table>
+
+<script src="assets/backend-config.js"></script>
+<script>
+(function () {
+  "use strict";
+  var CFG = window.GG_FIREBASE || {};
+  var FS = "https://firestore.googleapis.com/v1/projects/" + CFG.projectId + "/databases/(default)/documents";
+  var KEY = CFG.apiKey;
+  var out = document.getElementById("out"), summary = document.getElementById("summary");
+  var passed = 0, failed = 0;
+  var CUSTOM = '{"eff":{"effective":92}}';
+
+  function log(ok, name, detail) {
+    var tr = document.createElement("tr");
+    tr.className = ok ? "pass" : "fail";
+    tr.innerHTML = '<td class="s">' + (ok ? "\u2713" : "\u2717") + "</td><td></td>";
+    tr.children[1].textContent = name + (detail ? "  \u2014 " + detail : "");
+    out.appendChild(tr);
+    if (ok) passed++; else failed++;
+    summary.textContent = passed + " passed" + (failed ? ", " + failed + " FAILED" : "") + " so far\u2026";
+  }
+  function note(text) {
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td class='note'></td>";
+    tr.children[1].textContent = text;
+    out.appendChild(tr);
+  }
+
+  function url(path) { return FS + path + (path.indexOf("?") === -1 ? "?" : "&") + "key=" + encodeURIComponent(KEY); }
+  function fields(o) {
+    var f = {};
+    Object.keys(o).forEach(function (k) { f[k] = { stringValue: String(o[k]) }; });
+    return { fields: f };
+  }
+  function call(method, path, token, body, rawUrl) {
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = "Bearer " + token;
+    return fetch(rawUrl || url(path), { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined });
+  }
+  // A check passes when an "allow" is answered with success, or a "deny" with exactly 403 (so a typo in this page cannot fake a pass).
+  function check(name, allow, res) {
+    return Promise.resolve(res).then(function (r) {
+      var ok = allow ? r.ok : r.status === 403;
+      log(ok, (allow ? "allowed: " : "refused: ") + name, ok ? "" : "got HTTP " + r.status);
+      return r;
+    }).catch(function (e) { log(false, name, "request failed: " + e.message); return { ok: false, status: 0, json: function () { return Promise.resolve({}); } }; });
+  }
+  function friendly(code) {
+    code = String(code || "");
+    if (/^(INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD)/.test(code)) return "the email or password was not accepted. Check for typos. If this login was created with the password left blank, its password is a random one nobody knows: use Admin \u2192 Logins \u2192 Manage \u2192 Send reset email, set a password from the email, and try again.";
+    if (/^EMAIL_NOT_FOUND/.test(code)) return "no Firebase login exists for that email.";
+    if (/^USER_DISABLED/.test(code)) return "that login is disabled in Firebase.";
+    if (/^TOO_MANY_ATTEMPTS/.test(code)) return "too many attempts. Wait a few minutes and try again.";
+    return code || "sign-in failed";
+  }
+  // "who" says which of the two logins this is, so a failure names the right one.
+  function signIn(email, password, who) {
+    return fetch("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + encodeURIComponent(KEY), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email, password: password, returnSecureToken: true }),
+    }).then(function (r) { return r.json().then(function (d) {
+      if (!r.ok) throw new Error(who + " could not sign in: " + friendly(d.error && d.error.message));
+      return { token: d.idToken, uid: d.localId };
+    }); });
+  }
+  function docId(res) { return res.json().then(function (d) { return d && d.name ? d.name.split("/").pop() : null; }); }
+  function stamp() { return new Date().toISOString(); }
+
+  function run(adminEmail, adminPw, partEmail, partPw) {
+    var A, P, orig = {}, created = [], trainerId = "rules-check-" + Date.now(), emails = [];
+    var rep = function (uid, over) {
+      return Object.assign({ uid: uid, name: "rules-check", email: "rules-check@example.com", type: "tof", title: "rules-check (safe to delete)", score: "0%", scoring: "", createdAt: stamp(), payload: "{}" }, over || {});
+    };
+    var setP = function (o) { // change the test participant's settings; a field not listed keeps its value
+      var mask = Object.keys(o).map(function (k) { return "updateMask.fieldPaths=" + k; }).join("&");
+      return call("PATCH", "/users/" + P.uid + "?" + mask, A.token, fields(o));
+    };
+    var createAs = function (who, over, save) {
+      return call("POST", "/reports", who.token, fields(rep(who.uid, over))).then(function (r) {
+        return docId(r.clone ? r.clone() : r).then(function (id) { if (id && save !== false) created.push(id); return { res: r, id: id }; });
+      });
+    };
+    var stat = function (name, allow, who, over) {
+      return call("POST", "/reports", who.token, fields(rep(who.uid, over))).then(function (r) {
+        var p = r.ok ? docId(r.clone()).then(function (id) { if (id) created.push(id); }) : Promise.resolve();
+        return p.then(function () { return check(name, allow, r); });
+      });
+    };
+    var seq = function (steps) { return steps.reduce(function (p, s) { return p.then(s); }, Promise.resolve()); };
+
+    if (!adminEmail || !adminPw || !partEmail || !partPw) return Promise.reject(new Error("Fill in all four boxes."));
+    if (adminEmail.toLowerCase() === partEmail.toLowerCase()) return Promise.reject(new Error("The admin and the test participant must be two different logins."));
+    return signIn(adminEmail, adminPw, "The admin login").then(function (a) { A = a; return signIn(partEmail, partPw, "The test participant"); }).then(function (p) { P = p; })
+      .then(function () { return call("GET", "/users/" + A.uid, A.token); }).then(function (r) {
+        if (!r.ok) throw new Error("The admin login has no users profile (or is not allowed to read it). HTTP " + r.status);
+        return r.json();
+      }).then(function (d) {
+        if (!d.fields || !d.fields.role || d.fields.role.stringValue !== "admin") throw new Error("The first login is not an admin (its users profile needs role: admin).");
+        A.scoring = d.fields.scoring ? d.fields.scoring.stringValue : "";
+        return call("GET", "/users/" + P.uid, A.token);
+      }).then(function (r) {
+        if (!r.ok) throw new Error("The test participant has no users profile. Create it in the admin console. HTTP " + r.status);
+        return r.json();
+      }).then(function (d) {
+        var f = d.fields || {};
+        if (f.role && f.role.stringValue === "admin") throw new Error("Use a normal participant as the test login, not an admin.");
+        ["tools", "active", "scoring"].forEach(function (k) { orig[k] = f[k] ? f[k].stringValue : undefined; });
+        note("Test participant's own settings noted (tools=" + orig.tools + ", active=" + orig.active + ", scoring=" + (orig.scoring ? "custom" : "default") + "); they are put back at the end.");
+        return setP({ tools: "tof,eff", active: "true", scoring: "" });
+      }).then(function (r) { if (!r.ok) throw new Error("The admin could not change the participant's profile (HTTP " + r.status + "). Check the rules on users."); })
+
+      // ---- reports: who may save what
+      .then(function () { return seq([
+        function () { return stat("participant saves a report as themselves", true, P); },
+        function () { return stat("saving a report as someone else", false, P, { uid: A.uid }); },
+        function () { return stat("a report with an extra, unknown field", false, P, { extra: "1" }); },
+        function () { return stat("a report with a scoring string the admin never set", false, P, { scoring: CUSTOM }); },
+        function () { return stat("an unknown tool type", false, P, { type: "zzz" }); },
+        function () { return setP({ tools: "tof" }).then(function () { return stat("saving a tool the participant was not given (eff)", false, P, { type: "eff" }); }); },
+        function () { return stat("saving the tool they were given (tof)", true, P, { type: "tof" }); },
+        function () { return setP({ tools: "tof,eff", active: "false" }).then(function () { return stat("saving while the login is suspended", false, P); }); },
+        function () { return setP({ active: "true", scoring: CUSTOM }).then(function () { return stat("default scoring while the admin set custom scoring", false, P, { scoring: "" }); }); },
+        function () { return stat("scoring exactly as the admin set it", true, P, { scoring: CUSTOM }); },
+        function () { return setP({ scoring: "" }); },
+      ]); })
+
+      // ---- reports: who may read / change
+      .then(function () { return createAs(A, { scoring: A.scoring }); }).then(function (mine) {
+        var adminReport = mine.id, partReport = created[0];
+        if (!mine.res.ok) note("Skipped a few checks: the admin could not save a report as themselves (HTTP " + mine.res.status + ").");
+        return seq([
+          function () { return check("participant reads their own report", true, call("GET", "/reports/" + partReport, P.token)); },
+          function () { return adminReport ? check("participant reads someone else's report", false, call("GET", "/reports/" + adminReport, P.token)) : null; },
+          function () { return check("participant lists ALL reports", false, call("GET", "/reports", P.token)); },
+          function () {
+            return check("participant lists their own reports (filtered by uid)", true, call("POST", "", P.token, {
+              structuredQuery: { from: [{ collectionId: "reports" }], where: { fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: P.uid } } }, limit: 5 },
+            }, FS + ":runQuery?key=" + encodeURIComponent(KEY)));
+          },
+          function () { return check("admin lists all reports", true, call("GET", "/reports", A.token)); },
+          function () { return check("participant edits a report", false, call("PATCH", "/reports/" + partReport + "?updateMask.fieldPaths=title", P.token, fields({ title: "x" }))); },
+          function () { return check("participant deletes a report", false, call("DELETE", "/reports/" + partReport, P.token)); },
+          function () { return check("admin deletes a report", true, call("DELETE", "/reports/" + partReport, A.token)); },
+        ]);
+      })
+
+      // ---- profiles, trainers, templates, config
+      .then(function () { return seq([
+        function () { return check("participant reads their own profile", true, call("GET", "/users/" + P.uid, P.token)); },
+        function () { return check("participant reads the admin's profile", false, call("GET", "/users/" + A.uid, P.token)); },
+        function () { return check("participant lists all profiles", false, call("GET", "/users", P.token)); },
+        function () { return check("participant makes themselves admin", false, call("PATCH", "/users/" + P.uid + "?updateMask.fieldPaths=role", P.token, fields({ role: "admin" }))); },
+        function () { return check("participant reads the trainer directory", true, call("GET", "/trainers", P.token)); },
+        function () { return check("participant edits the trainer directory", false, call("PATCH", "/trainers/" + trainerId, P.token, fields({ name: "Nope" }))); },
+        function () { return check("admin edits the trainer directory", true, call("PATCH", "/trainers/" + trainerId, A.token, fields({ name: "Rules Check", team: "" }))); },
+        function () { return check("participant reads scoring templates", false, call("GET", "/scoring_templates", P.token)); },
+        function () { return check("signed-out visitor reads the site config", true, call("GET", "/site_config", null)); },
+        function () { return check("signed-out visitor edits the site config", false, call("PATCH", "/site_config/rules-check", null, fields({ value: "x" }))); },
+      ]); })
+
+      // ---- audit log
+      .then(function () { return seq([
+        function () { return check("participant logs an action as themselves", true, call("POST", "/audit_log", P.token, fields({ actor: P.uid, actorName: "rules-check", action: "rules_check", target: "", detail: "", createdAt: stamp() }))); },
+        function () { return check("participant logs an action as someone else", false, call("POST", "/audit_log", P.token, fields({ actor: A.uid, actorName: "x", action: "x", target: "", detail: "", createdAt: stamp() }))); },
+        function () { return check("participant reads the audit log", false, call("GET", "/audit_log", P.token)); },
+        function () { return check("admin reads the audit log", true, call("GET", "/audit_log", A.token)); },
+      ]); })
+
+      // ---- the sign-up list (signed out)
+      .then(function () {
+        var ts = Date.now(), good = "rules-check-" + ts + "@example.com", up = "Rules-Check-" + ts + "@EXAMPLE.com";
+        emails.push(good);
+        var sub = function (id, o) { return call("POST", "/subscribers?documentId=" + encodeURIComponent(id), null, fields(o), FS + "/subscribers?documentId=" + encodeURIComponent(id) + "&key=" + encodeURIComponent(KEY)); };
+        return seq([
+          function () { return check("sign-up with a lowercase address", true, sub(good, { email: good, source: "rules-check", createdAt: stamp() })); },
+          function () { return check("sign-up with capital letters", false, sub(up, { email: up, source: "x", createdAt: stamp() })); },
+          function () { return check("sign-up where the id and the email differ", false, sub("a" + good, { email: good, source: "x", createdAt: stamp() })); },
+          function () { return check("sign-up with an extra field", false, sub("b" + good, { email: "b" + good, source: "x", createdAt: stamp(), extra: "1" })); },
+          function () { return check("a visitor reads the sign-up list", false, call("GET", "/subscribers/" + encodeURIComponent(good), null)); },
+          function () { return check("admin reads the sign-up list", true, call("GET", "/subscribers", A.token)); },
+          function () { return check("unsubscribing (removing your own address)", true, call("DELETE", "/subscribers/" + encodeURIComponent(good), null)); },
+        ]);
+      })
+
+      // ---- always clean up
+      .then(function () { return { ok: true }; }, function (e) { return { ok: false, error: e }; })
+      .then(function (outcome) {
+        var steps = A ? created.map(function (id) { return function () { return call("DELETE", "/reports/" + id, A.token).catch(function () {}); }; }) : [];
+        if (A) steps.push(function () { return call("DELETE", "/trainers/" + trainerId, A.token).catch(function () {}); });
+        if (A && P) {
+          var mask = ["tools", "active", "scoring"].map(function (k) { return "updateMask.fieldPaths=" + k; }).join("&");
+          var restore = {};
+          ["tools", "active", "scoring"].forEach(function (k) { if (orig[k] !== undefined) restore[k] = orig[k]; });
+          steps.push(function () {
+            return call("PATCH", "/users/" + P.uid + "?" + mask, A.token, fields(restore)).then(function (r) {
+              note(r.ok ? "Test participant's settings restored." : "COULD NOT restore the test participant's settings (HTTP " + r.status + "). Set them by hand in Admin \u2192 Logins \u2192 Manage.");
+            });
+          });
+        }
+        return seq(steps).then(function () { if (!outcome.ok) throw outcome.error; });
+      });
+  }
+
+  document.getElementById("f").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var btn = document.getElementById("run");
+    out.innerHTML = ""; passed = 0; failed = 0; summary.textContent = "Running\u2026";
+    var v = function (id) { return document.getElementById(id).value; };
+    if (!CFG.projectId || !CFG.apiKey) { summary.textContent = "assets/backend-config.js has no Firebase project set."; return; }
+    btn.disabled = true;
+    run(v("ae").trim(), v("ap"), v("pe").trim(), v("pp")).then(function () {
+      summary.className = failed ? "fail" : "pass";
+      summary.textContent = failed ? failed + " check(s) FAILED, " + passed + " passed. Send me the red lines." : "All " + passed + " checks passed. Your rules do what they should.";
+    }, function (err) {
+      summary.className = "fail";
+      summary.textContent = "Stopped: " + err.message;
+    }).then(function () { btn.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>

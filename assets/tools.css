@@ -163,3 +163,48 @@
 .fw-chip b { font: 700 15px/1 "Raleway", serif; letter-spacing: -.05em; }
 .fw-chip small { font-size: 8px; text-transform: uppercase; letter-spacing: .13em; font-weight: 600; opacity: .7; }
 @media (max-width: 900px) { .fw-field { display: none; } }
+
+/* ---- Sign-up hardening, validation, analytics, templates ---------------- */
+.hp { position: absolute !important; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.su-fine { font-size: 11px; opacity: .7; margin: 12px 0 0; line-height: 1.5; }
+.su-link { border: 0; background: transparent; color: inherit; padding: 0; font: inherit; text-decoration: underline; cursor: pointer; }
+.tt-table input.tt-bad, .tt-field input.tt-bad { border-color: #c9604a; background: rgba(201, 96, 74, .22); }
+.tt-table input.tt-warn, .tt-table td input.tt-warn { border-color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); }
+.mu-templates { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mu-templates .select-wrap { flex: 1 1 220px; }
+.admin-tabs { flex-wrap: wrap; }
+.an-h { margin: 18px 0 8px; font-size: 12px; }
+.an-table td { padding: 6px 12px 6px 0; }
+.an-barcell { width: 55%; }
+.an-bar { display: block; height: 10px; background: var(--aqua); }
+.fw-chip { border: 0; font-family: inherit; cursor: pointer; }
+.fw-chip:focus-visible, .service-tile .service-open:focus-visible, .tt-seg button:focus-visible, .ghost-button:focus-visible, .auth-submit:focus-visible,
+.tool-sheet input:focus-visible, .tool-sheet select:focus-visible, .tool-sheet textarea:focus-visible { outline: 2px solid #7c69ce; outline-offset: 2px; }
+
+/* ---- Legibility: a floor of 11 to 12px and firmer contrast on the signed-in pages ---- */
+.service-copy p { font-size: 12px; opacity: .85; }
+.service-phase, .service-tile-top, .service-open { font-size: 11px; }
+.service-type, .service-phase { opacity: .8; }
+.service-number { opacity: .75; }
+.service-tile.coming-soon .service-visual, .service-tile.coming-soon .service-copy { opacity: .82; }
+.service-tile.coming-soon .service-open { opacity: .75; }
+.tt-hint, .tt-field, .tt-tile span, .tt-seg button, .tt-table th, .tt-chip { font-size: 11px; }
+.tt-hint { opacity: .78; }
+.tt-tile span { opacity: .8; }
+.tt-tile small, .tt-table th small { font-size: 10px; opacity: .72; }
+.tt-pill { font-size: 10px; }
+.fw-chip small { font-size: 10px; opacity: .8; }
+.dash-footer .footer-bottom, .dash-footer .footer-bottom button, .dash-footer .footer-column > span { font-size: 11px; }
+.dash-footer .footer-column a, .dash-footer .footer-column button { font-size: 12px; }
+.dashboard-hero .section-kicker, .dashboard-toolbar .section-kicker { font-size: 11px; }
+
+/* ---- Companies, item library, and the corporate "Customize forms" studio ---- */
+.admin-logo { display: inline-block; border-radius: 6px; object-fit: cover; vertical-align: middle; background: var(--muted); }
+.admin-logo-empty { display: inline-block; border: 1px dashed var(--border); border-radius: 6px; vertical-align: middle; }
+.cm-file { display: grid; gap: 5px; font-size: 10px; font-weight: 600; }
+.cm-file input { border: 1px solid var(--border); background: var(--background); padding: 8px 10px; font-size: 11px; width: 100%; box-sizing: border-box; }
+.cs-logo-preview { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 11px; opacity: .75; }
+.cs-group { margin-top: 12px; }
+.cs-group h4 { margin: 0 0 6px; font-size: 11px; font-weight: 700; opacity: .75; }
+.cs-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12px; border-top: 1px solid var(--border); }
+.cs-item input { flex: none; }

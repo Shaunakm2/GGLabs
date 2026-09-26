@@ -25,3 +25,20 @@ window.GG_SUPABASE = {
   url: "",
   anonKey: "",
 };
+
+/* -----------------------------------------------------------------------------
+   Optional settings
+   -------------------------------------------------------------------------- */
+
+window.GG_SETTINGS = {
+  // How long after the homepage opens the email sign-up pop-up appears (milliseconds).
+  // 1200 = right away, as first requested. Most sites get better results at 8000 to 10000.
+  signupPopupDelayMs: 1200,
+};
+
+// Optional. Fill this in after deploying the functions in functions/ (see FIREBASE-SETUP.md) and the admin
+// console can really disable or delete Firebase Auth accounts, not just revoke access in the database.
+// Example: "https://us-central1-YOUR-PROJECT.cloudfunctions.net"
+window.GG_FUNCTIONS = {
+  baseUrl: "",
+};

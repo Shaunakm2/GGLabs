@@ -1,0 +1,16 @@
+{
+  "name": "gg-learning-labs-static",
+  "private": true,
+  "description": "Static site. Nothing to build: open index.html. This file is only for the tests.",
+  "scripts": {
+    "test": "node tests/core.test.js && node tests/pdf.test.js && node tests/smoke.test.js && node tests/rules-check-page.test.js",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-gg \"node tests/rules.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.0",
+    "firebase": "^10.0.0",
+    "jsdom": "^24.0.0",
+    "jspdf": "2.5.2",
+    "jspdf-autotable": "3.8.4"
+  }
+}

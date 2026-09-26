@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function mine() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        mine().role == 'admin';
+    }
+
+    // Everyone can read the site config. That is how visitors see your edits.
+    // Only put things here that are fine for the public to see.
+    match /site_config/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // People can read their own profile. Only admins can create or change one.
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // The trainer directory: everyone signed in reads it (name suggestions), admins edit it.
+    match /trainers/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // The pool of Observation Form items a corporate account can pick from to build its own checklist.
+    // Everyone signed in reads it; only admins curate it.
+    match /item_library/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // A corporate account's own space: its name, logo, custom Observation checklist and Effectiveness
+    // weighting. An admin can do anything here. A corporate login can only touch its OWN company's
+    // document (the one on their own users/{uid}.companyId), and only these four fields — never role,
+    // access, or anyone else's company.
+    match /companies/{id} {
+      allow read: if signedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        signedIn() && mine().role == 'corporate' && mine().get('companyId', '') == id &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'logo', 'tof', 'scoring'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Reusable scoring profiles an admin can apply to a person.
+    match /scoring_templates/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Saved reports. Someone can save a report only as themselves, only while their
+    // login is active, only for a tool they have been given, and only with the scoring
+    // profile the admin set for them (so their own override cannot be changed from the browser).
+    // `companyScoring` (a corporate account's company-wide weighting, when they have one) is stored
+    // as a snapshot for the admin Reports tab to check, but is not verified here: rules cannot parse
+    // the JSON inside it. They read only their own; admins read and delete everyone's; nobody edits one.
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'type', 'title', 'score', 'scoring', 'companyScoring', 'createdAt', 'payload'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.type in ['tof', 'eff']
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() < 900000
+        && mine().get('active', 'true') != 'false'
+        && mine().get('tools', 'tof,eff').split(',').hasAny([request.resource.data.type])
+        && request.resource.data.scoring == mine().get('scoring', '');
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+      allow update: if false;
+    }
+
+    // Who changed what. Anyone signed in can add an entry about themselves; only admins read it;
+    // entries can never be edited or removed.
+    match /audit_log/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['actor', 'actorName', 'action', 'target', 'detail', 'createdAt'])
+        && request.resource.data.actor == request.auth.uid;
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // Email sign-ups from the homepage pop-up and footer form. Anyone can add an address
+    // (the address is the document id, so repeats collapse into one) and anyone who knows
+    // an address can remove it (the unsubscribe link). Only admins can read or list them.
+    match /subscribers/{email} {
+      allow create: if request.resource.data.keys().hasOnly(['email', 'source', 'createdAt'])
+        && request.resource.data.email is string
+        && request.resource.data.email == email
+        && email == email.lower()
+        && email.size() <= 254
+        && email.matches('.+@.+[.].+');
+      allow read: if isAdmin();
+      allow delete: if true;
+      allow update: if false;
+    }
+  }
+}

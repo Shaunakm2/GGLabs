@@ -174,12 +174,14 @@
         <div class="newsletter-form-wrap">
           <div class="mail-symbol"><i data-i="mail" data-s="21"></i></div>
           <form class="newsletter-form" id="newsletter-form">
+            <input class="hp" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
             <label for="newsletter-email" data-cms="news.label">Your email, if you’re into that sort of thing</label>
             <div class="newsletter-input-row">
               <input id="newsletter-email" placeholder="you@somewhere-good.com" type="email" />
               <button type="submit" aria-label="Sign up for newsletter"><i data-i="arrow-up-right" data-s="18"></i></button>
             </div>
             <div class="form-note" id="newsletter-note" data-cms="news.note">No noise. Unsubscribe whenever.</div>
+            <div class="form-note">By signing up you agree to receive occasional emails from us. <button type="button" class="su-link" data-open-unsub>Unsubscribe</button> at any time.</div>
           </form>
         </div>
       </section>
@@ -209,6 +211,7 @@
               <button data-toast>For individuals</button>
               <button data-toast>For companies</button>
               <button data-toast>Talk to GG</button>
+              <button data-open-unsub>Unsubscribe</button>
             </div>
             <div class="footer-column">
               <span>Elsewhere</span>
@@ -501,6 +504,7 @@
               <button role="menuitem" data-user-action="profile"><i data-i="user" data-s="15"></i> Your profile</button>
               <button role="menuitem" data-user-action="prefs"><i data-i="settings" data-s="15"></i> Preferences</button>
               <button role="menuitem" data-user-action="admin" id="admin-item" hidden><i data-i="shield" data-s="15"></i> Admin console</button>
+              <button role="menuitem" data-user-action="customize" id="customize-item" hidden><i data-i="wand-sparkles" data-s="15"></i> Customize forms</button>
               <button role="menuitem" data-user-action="theme"><i data-i="moon" data-s="15"></i> <span id="menu-theme-label">Switch theme</span></button>
               <div class="profile-menu-rule"></div>
               <button role="menuitem" data-user-action="signout" class="danger"><i data-i="log-out" data-s="15"></i> Sign out</button>
@@ -516,7 +520,7 @@
           <p id="dash-lede"></p>
         </div>
         <!-- L&D theories that drift and get nudged away from the cursor: assets/repel.js -->
-        <div class="fw-field" id="fw-field" aria-hidden="true"></div>
+        <div class="fw-field" id="fw-field" role="group" aria-label="L&amp;D theories: choose one to see related services"></div>
       </section>
       <section class="dashboard-content page-width" id="services">
         <div class="dashboard-toolbar">
@@ -606,7 +610,8 @@
 
     <!-- Trainer tools: opened from the Trainer Observation / Trainer Effectiveness tiles.
          Logic: assets/tools-core.js  Screen: assets/tools-ui.js -->
-    <div class="tool-sheet" id="tool-sheet" hidden>
+    <div class="tool-sheet" id="tool-sheet" role="dialog" aria-modal="true" aria-labelledby="tool-title" hidden>
+      <datalist id="tt-trainers"></datalist>
       <div class="tool-sheet-bar">
         <div class="page-width tool-sheet-bar-inner">
           <button type="button" class="back-link" data-tool-back><i data-i="arrow-left" data-s="14"></i> Back to workspace</button>
@@ -629,14 +634,34 @@
           <button type="button" class="su-close" id="signup-close" aria-label="Close"><i data-i="x" data-s="16"></i></button>
         </div>
         <form class="su-form" id="signup-form" novalidate>
-          <p>One short email when there is something worth reading: practical L&amp;D ideas, new tools and field notes. No noise. Unsubscribe whenever.</p>
+          <p>One short email when there is something worth reading: practical L&amp;D ideas, new tools and field notes. No noise.</p>
+          <input class="hp" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
           <div class="su-row">
             <input id="signup-email" type="email" placeholder="you@somewhere-good.com" autocomplete="email" aria-label="Email address" />
             <button type="submit" class="auth-submit compact">Sign up</button>
           </div>
           <div class="form-note" id="signup-note" aria-live="polite"></div>
+          <p class="su-fine">By signing up you agree to receive occasional emails from GG Learning Labs. You can <button type="button" class="su-link" data-open-unsub>unsubscribe</button> at any time.</p>
         </form>
         <button type="button" class="su-skip" id="signup-skip">Maybe later</button>
+      </div>
+    </div>
+
+    <!-- Unsubscribe dialog -->
+    <div class="modal-veil" id="unsub-veil" hidden>
+      <div class="modal signup-modal" role="dialog" aria-modal="true" aria-labelledby="unsub-title">
+        <div class="modal-top">
+          <div><span class="card-eyebrow">Lab notes</span><h2 id="unsub-title">Unsubscribe</h2></div>
+          <button type="button" class="su-close" id="unsub-close" aria-label="Close"><i data-i="x" data-s="16"></i></button>
+        </div>
+        <form class="su-form" id="unsub-form" novalidate>
+          <p>Type the address you signed up with and we will remove it.</p>
+          <div class="su-row">
+            <input id="unsub-email" type="email" placeholder="you@somewhere-good.com" autocomplete="email" aria-label="Email address" />
+            <button type="submit" class="auth-submit compact">Unsubscribe</button>
+          </div>
+          <div class="form-note" id="unsub-note" aria-live="polite"></div>
+        </form>
       </div>
     </div>
 
@@ -644,8 +669,6 @@
     <ol class="gg-toaster" id="gg-toaster" aria-live="polite"></ol>
 
     <script src="assets/backend-config.js"></script>
-    <script src="assets/vendor/jspdf.umd.min.js"></script>
-    <script src="assets/vendor/jspdf.plugin.autotable.min.js"></script>
     <script src="assets/tools-core.js"></script>
     <script src="assets/app.js"></script>
     <script src="assets/tools-ui.js"></script>
