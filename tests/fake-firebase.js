@@ -103,7 +103,7 @@ function fakeFetch(url, opts = {}) {
         const isOwnCorporate = who && prof.role === "corporate" && prof.companyId === id;
         if (!isAdmin && !isOwnCorporate) return json(403, {});
         const incoming = flat(body.fields);
-        if (!isAdmin && Object.keys(incoming).some(k => !["name", "logo", "tof", "scoring"].includes(k))) return json(403, {});
+        if (!isAdmin && Object.keys(incoming).some(k => !["name", "logo", "tof", "scoring", "sector"].includes(k))) return json(403, {});
         if (url.includes("updateMask")) {
           const masked = Array.from(url.matchAll(/updateMask\.fieldPaths=([^&]+)/g)).map(m => decodeURIComponent(m[1]));
           const cur = db.companies[id] || {};
