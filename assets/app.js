@@ -469,7 +469,7 @@ let libraryLoaded = false;
 async function loadItemLibrary() {
   try {
     const rows = await fbList("item_library");
-    window.ggLibrary = rows.map(function (r) { return { id: r.id, label: r.fields.name || r.id, section: r.fields.team || "" }; })
+    window.ggLibrary = rows.map(function (r) { return { id: r.id, label: r.fields.name || r.id, section: r.fields.team || "", sector: r.fields.sector || "" }; })
       .sort(function (a, b) { return a.label.localeCompare(b.label); });
     if (window.ggLibraryReady) window.ggLibraryReady(window.ggLibrary);
   } catch (e) { console.warn("Item library not loaded:", e.message); }
@@ -490,12 +490,29 @@ async function fbSaveTrainer(name, team) {
 
 // The `item_library` collection reuses the same {name, team} shape as trainers, where `team` doubles
 // as the section tag items are grouped under when a company builds its checklist.
-async function fbSaveLibraryItem(label, section) {
+// The industry sectors a company can pick from. Item library entries and the default Effectiveness
+// weighting can each be tagged for one of these, so what a company is offered fits their industry.
+const SECTORS = ["Hospitality", "BPO/KPO", "Recruitment", "Accounting & Finance", "Retail", "Healthcare", "IT / Software", "Manufacturing", "Other"];
+
+// A starting point for each sector's Effectiveness weighting \u2014 a company can change every number
+// afterwards, and it never overwrites what they have already saved unless they click the button for it.
+const SECTOR_EFF_DEFAULTS = {
+  "Hospitality": { weights: { l1: 25, tof: 25, thr: 15, util: 15, att: 20 }, min: { l1: 85, tof: 85, thr: 85, util: 85, att: 95 } },
+  "BPO/KPO": { weights: { l1: 20, tof: 20, thr: 30, util: 25, att: 5 }, min: { l1: 85, tof: 85, thr: 92, util: 92, att: 95 } },
+  "Recruitment": { weights: { l1: 25, tof: 25, thr: 30, util: 15, att: 5 }, min: { l1: 85, tof: 85, thr: 90, util: 85, att: 90 } },
+  "Accounting & Finance": { weights: { l1: 35, tof: 35, thr: 10, util: 10, att: 10 }, min: { l1: 90, tof: 90, thr: 85, util: 85, att: 95 } },
+  "Retail": { weights: { l1: 25, tof: 25, thr: 20, util: 20, att: 10 }, min: { l1: 85, tof: 85, thr: 88, util: 88, att: 92 } },
+  "Healthcare": { weights: { l1: 35, tof: 35, thr: 10, util: 10, att: 10 }, min: { l1: 92, tof: 92, thr: 85, util: 85, att: 95 } },
+  "IT / Software": { weights: { l1: 30, tof: 30, thr: 20, util: 15, att: 5 }, min: { l1: 88, tof: 88, thr: 88, util: 88, att: 90 } },
+  "Manufacturing": { weights: { l1: 25, tof: 25, thr: 25, util: 15, att: 10 }, min: { l1: 85, tof: 85, thr: 88, util: 85, att: 95 } },
+};
+
+async function fbSaveLibraryItem(label, section, sector) {
   const token = await fbEnsureToken();
   const res = await fetch(FS + "/item_library/" + slugOf(label) + "?key=" + FB.apiKey, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-    body: JSON.stringify({ fields: { name: { stringValue: label.trim() }, team: { stringValue: (section || "").trim() } } }),
+    body: JSON.stringify({ fields: { name: { stringValue: label.trim() }, team: { stringValue: (section || "").trim() }, sector: { stringValue: (sector || "").trim() } } }),
   });
   if (!res.ok) throw new Error("HTTP " + res.status);
 }
@@ -1475,7 +1492,7 @@ function parseTools(text) {
 function userFromAccount(account) {
   const meta = account.meta || {};
   const co = meta._company || null;
-  const company = co ? { id: co.id, name: co.name || "", logo: co.logo || "", scoringRaw: co.scoring || "", tofPicks: parseJson(co.tof) } : null;
+  const company = co ? { id: co.id, name: co.name || "", logo: co.logo || "", scoringRaw: co.scoring || "", tofPicks: parseJson(co.tof), sector: co.sector || "" } : null;
   return {
     uid: session ? session.uid : "",
     name: meta.name || account.email.split("@")[0],
@@ -1536,6 +1553,7 @@ function renderDashboard() {
   if (window.ggToolsHello) window.ggToolsHello(currentUser);
   if (!trainersLoaded && FB && session) { trainersLoaded = true; loadTrainerDirectory(); }
   if (!libraryLoaded && FB && session && currentUser && currentUser.role === "corporate") { libraryLoaded = true; loadItemLibrary(); }
+  if (currentUser.role === "corporate" && currentUser.company && !currentUser.company.sector) openSectorPrompt();
   document.getElementById("profile-avatar").textContent = currentUser.name
     .split(" ")
     .map(function (word) { return word[0]; })
@@ -2321,12 +2339,15 @@ const LIBRARY_CAP = 30;
 let libraryCache = [];
 
 function adminLibrary() {
+  const sectorOpts = '<option value="">General (any sector)</option>' + SECTORS.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + "</option>"; }).join("");
   return (
-    '<p class="admin-note">The pool of Observation Form items (Firestore <code>item_library</code>) that corporate accounts pick from to build their own checklist. Give each one a section (for example &ldquo;Opening&rdquo;, &ldquo;Delivery&rdquo;) &mdash; that is how a company\u2019s picks are grouped. Aim for around ' + LIBRARY_CAP + '.</p>' +
+    '<p class="admin-note">The pool of Observation Form items (Firestore <code>item_library</code>) that corporate accounts pick from to build their own checklist. Give each one a section (for example &ldquo;Opening&rdquo;, &ldquo;Delivery&rdquo;) \u2014 that is how a company\u2019s picks are grouped \u2014 and a sector, so a company is shown items suited to their industry first. Aim for around ' + LIBRARY_CAP + '.</p>' +
     '<div class="admin-list" id="library-list"><div class="admin-row"><div><strong>Loading&hellip;</strong></div></div></div>' +
-    '<div class="admin-new"><strong>Add an item</strong><div class="admin-grid"><input id="nl-name" placeholder="Item text" /><input id="nl-team" placeholder="Section (e.g. Opening)" /></div>' +
+    '<div class="admin-new"><strong>Add an item</strong><div class="admin-grid">' +
+    '<input id="nl-name" placeholder="Item text" /><input id="nl-team" placeholder="Section (e.g. Opening)" />' +
+    '<div class="select-wrap"><select id="nl-sector">' + sectorOpts + "</select>" + ic("chevron-down", 15) + "</div></div>" +
     '<button class="auth-submit compact" data-add-library>Add item ' + ic("check", 15) + "</button>" +
-    '<label>Or paste many, one per line (&ldquo;Item text, Section&rdquo;)</label><textarea id="nl-bulk" rows="4" placeholder="Started on time, Opening&#10;Handled questions well, Delivery"></textarea>' +
+    '<label>Or paste many, one per line (&ldquo;Item text, Section, Sector&rdquo; \u2014 Sector is optional)</label><textarea id="nl-bulk" rows="4" placeholder="Started on time, Opening, Hospitality&#10;Handled questions well, Delivery"></textarea>' +
     '<button class="ghost-button" data-bulk-library>Import list</button></div>'
   );
 }
@@ -2343,7 +2364,7 @@ async function loadLibraryTab() {
       (libraryCache.length >= LIBRARY_CAP ? '<div class="admin-row"><div><strong>' + libraryCache.length + " items \u2014 that\u2019s plenty.</strong></div></div>" : "") +
       (libraryCache.length
         ? libraryCache.map(function (r) {
-            return '<div class="admin-row"><div><strong>' + esc(r.fields.name || r.id) + "</strong><span>" + esc(r.fields.team || "General") + "</span></div>" +
+            return '<div class="admin-row"><div><strong>' + esc(r.fields.name || r.id) + "</strong><span>" + esc(r.fields.team || "General") + (r.fields.sector ? " &middot; " + esc(r.fields.sector) : "") + "</span></div>" +
               '<button class="icon-button" data-del-library="' + esc(r.id) + '" aria-label="Remove item">' + ic("x", 14) + "</button></div>";
           }).join("")
         : '<div class="admin-row"><div><strong>No items yet.</strong><span>Add a few below, around 25 to 30 is plenty.</span></div></div>');
@@ -2466,34 +2487,50 @@ function csHtml() {
   csChecked = {};
   (co.tofPicks || []).forEach(function (sec) { (sec.ids || []).forEach(function (id) { csChecked[id] = true; }); });
   const library = window.ggLibrary || [];
+  const showAll = !!csShowAllSectors;
+  const visible = library.filter(function (it) {
+    return showAll || !co.sector || !it.sector || it.sector === co.sector || csChecked[it.id];
+  });
   const grouped = {};
   const order = [];
-  library.forEach(function (it) {
+  visible.forEach(function (it) {
     const tag = it.section || "General";
     if (!grouped[tag]) { grouped[tag] = []; order.push(tag); }
     grouped[tag].push(it);
   });
+  const hiddenCount = library.length - visible.length;
   return (
     '<div class="mu-block"><strong>Your brand</strong><p class="admin-note">Shown on every PDF your team downloads.</p><div class="admin-grid">' +
     '<input id="cs-name" placeholder="Company name" value="' + esc(co.name || "") + '" />' +
     '<label class="cm-file">Logo (PNG/JPEG)<input id="cs-logo" type="file" accept="image/png,image/jpeg" /></label></div>' +
-    '<div class="cs-logo-preview">' + logoImg(co.logo, 48) + '<span id="cs-logo-note">' + (co.logo ? "Current logo" : "No logo yet") + "</span></div></div>" +
+    '<div class="cs-logo-preview">' + logoImg(co.logo, 48) + '<span id="cs-logo-note">' + (co.logo ? "Current logo" : "No logo yet") + "</span></div>" +
+    '<label class="mu-sec" style="margin-top:12px"><span>Industry</span><div class="select-wrap"><select id="cs-sector"><option value="">Not set</option>' +
+    SECTORS.map(function (s) { return '<option' + (co.sector === s ? " selected" : "") + ">" + esc(s) + "</option>"; }).join("") +
+    "</select>" + ic("chevron-down", 15) + "</div></label>" +
+    '<p class="admin-note">Decides which items and starting weighting you are offered below.</p></div>' +
 
     '<div class="mu-block"><strong>Observation Form checklist</strong>' +
     '<p class="admin-note">Pick which items your team is observed on' + (library.length ? "" : " (ask an admin to add items to the library first)") +
     '. Leave nothing picked to keep the standard 36-item form.</p>' +
+    (library.length && co.sector
+      ? '<label class="cs-toggle"><input type="checkbox" id="cs-show-all"' + (showAll ? " checked" : "") + " /> Show items from every sector, not just " + esc(co.sector) +
+        (hiddenCount && !showAll ? " (" + hiddenCount + " hidden)" : "") + "</label>"
+      : "") +
     order.map(function (tag) {
       return '<div class="cs-group"><h4>' + esc(tag) + "</h4>" + grouped[tag].map(function (it) {
-        return '<label class="cs-item"><input type="checkbox" data-cs-item="' + esc(it.id) + '"' + (csChecked[it.id] ? " checked" : "") + " /> " + esc(it.label) + "</label>";
+        return '<label class="cs-item"><input type="checkbox" data-cs-item="' + esc(it.id) + '"' + (csChecked[it.id] ? " checked" : "") + " /> " + esc(it.label) +
+          (it.sector && it.sector !== co.sector ? ' <small class="cs-item-sector">(' + esc(it.sector) + ")</small>" : "") + "</label>";
       }).join("") + "</div>";
     }).join("") +
     '<p class="admin-note" id="cs-picked-note"></p></div>' +
 
     '<div class="mu-block"><strong>Trainer Effectiveness weighting</strong>' +
-    '<p class="admin-note">Applies to everyone at your company, unless an admin sets a different weighting for one person. The defaults are the Excel rules.</p>' +
+    '<p class="admin-note">Applies to everyone at your company, unless an admin sets a different weighting for one person. The defaults are the Excel rules' +
+    (co.sector && SECTOR_EFF_DEFAULTS[co.sector] ? ", or use the button below for a typical starting point in " + esc(co.sector) + "." : ".") + "</p>" +
     effScoringBlockHtml(cfg) + "</div>" +
 
     '<div class="modal-actions"><button type="button" class="ghost-button" data-cs-reset>Reset weighting to defaults</button>' +
+    (co.sector && SECTOR_EFF_DEFAULTS[co.sector] ? '<button type="button" class="ghost-button" data-cs-sector-defaults>Use typical weighting for ' + esc(co.sector) + "</button>" : "") +
     '<button type="button" class="auth-submit compact" data-cs-save>Save ' + ic("check", 15) + "</button></div>"
   );
 }
@@ -2504,19 +2541,69 @@ function csPickedNote() {
   if (el) el.textContent = n ? n + " item" + (n === 1 ? "" : "s") + " picked \u2014 your team will see a custom checklist." : "Nothing picked \u2014 your team sees the standard 36-item form.";
 }
 
+let sectorPromptShown = false;
+
+// Asked once, right after a corporate account's first sign-in, so the item library and Effectiveness
+// weighting they are offered in Customize forms can be suited to their industry from the start.
+function openSectorPrompt() {
+  if (sectorPromptShown && !veil.hidden) return;
+  sectorPromptShown = true;
+  document.querySelector(".modal").classList.remove("wide");
+  document.getElementById("modal-eyebrow").textContent = "One quick thing";
+  document.getElementById("modal-title").textContent = "What industry are you in?";
+  modalBody.dataset.mode = "sector";
+  modalBody.innerHTML =
+    '<p class="admin-note">This decides which Observation Form items and starting Effectiveness weighting you are offered in &ldquo;Customize forms&rdquo;. You can change it, and everything you pick, at any time.</p>' +
+    '<div class="select-wrap"><select id="sp-sector"><option value="">Choose your industry\\u2026</option>' +
+    SECTORS.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("") +
+    "</select>" + ic("chevron-down", 15) + "</div>" +
+    '<div class="modal-actions"><button type="button" class="auth-submit compact" data-sp-save>Continue ' + ic("check", 15) + "</button></div>";
+  veil.hidden = false;
+  hydrateIcons(modalBody);
+}
+
+modalBody.addEventListener("click", function (event) {
+  if (modalBody.dataset.mode !== "sector" || !event.target.closest("[data-sp-save]")) return;
+  const sector = document.getElementById("sp-sector").value;
+  if (!sector) { toast("Pick the closest match \\u2014 you can change it later."); return; }
+  fbSaveCompany(currentUser.company.id, { sector: sector })
+    .then(function () {
+      logAudit("company_sector_set", currentUser.company.id, sector);
+      currentUser.company.sector = sector;
+      toast("Thanks \\u2014 you can fine-tune everything else in Customize forms.");
+      closeModal();
+    })
+    .catch(function (e) { toast("Could not save: " + e.message); });
+});
+
+let csShowAllSectors = false;
+
+function csRedraw() {
+  modalBody.innerHTML = csHtml();
+  hydrateIcons(modalBody);
+  updateMuTotal();
+  csPickedNote();
+}
+
 function openCompanyStudio() {
   if (!currentUser || currentUser.role !== "corporate") return;
   document.querySelector(".modal").classList.add("wide");
   document.getElementById("modal-eyebrow").textContent = "Corporate";
   document.getElementById("modal-title").textContent = "Customize forms";
   modalBody.dataset.mode = "studio";
+  csShowAllSectors = false;
   modalBody.innerHTML = currentUser.company ? '<p class="admin-note">Loading&hellip;</p>' : csHtml();
   veil.hidden = false;
   hydrateIcons(modalBody);
   if (!currentUser.company) return;
-  const ready = function () { modalBody.innerHTML = csHtml(); hydrateIcons(modalBody); updateMuTotal(); csPickedNote(); };
-  if (libraryLoaded) ready(); else { libraryLoaded = true; loadItemLibrary().then(ready); }
+  if (libraryLoaded) csRedraw(); else { libraryLoaded = true; loadItemLibrary().then(csRedraw); }
 }
+
+modalBody.addEventListener("change", function (event) {
+  if (modalBody.dataset.mode !== "studio") return;
+  if (event.target.id === "cs-sector") { currentUser.company.sector = event.target.value || ""; csRedraw(); return; }
+  if (event.target.id === "cs-show-all") { csShowAllSectors = event.target.checked; csRedraw(); }
+});
 
 modalBody.addEventListener("click", function (event) {
   if (modalBody.dataset.mode !== "studio") return;
@@ -2532,22 +2619,34 @@ modalBody.addEventListener("click", function (event) {
     updateMuTotal();
     return;
   }
+  if (event.target.closest("[data-cs-sector-defaults]")) {
+    const d = SECTOR_EFF_DEFAULTS[currentUser.company.sector];
+    if (!d) return;
+    window.GGTools.EFF_KEYS.forEach(function (k) {
+      document.querySelector('[data-mu-w="' + k + '"]').value = muNum(d.weights[k]);
+      document.querySelector('[data-mu-min="' + k + '"]').value = muNum(d.min[k]);
+    });
+    updateMuTotal();
+    toast("Typical " + currentUser.company.sector + " weighting loaded \\u2014 adjust anything, then Save.");
+    return;
+  }
   if (event.target.closest("[data-cs-save]")) {
     const co = currentUser.company;
     const name = document.getElementById("cs-name").value.trim();
     if (!name) { toast("Give your company a name."); return; }
+    const sector = document.getElementById("cs-sector").value;
     let cfg;
     try { cfg = readManageCfg(); } catch (e) { toast(e.message); return; }
     const picked = Array.from(document.querySelectorAll("[data-cs-item]:checked")).map(function (el) { return el.dataset.csItem; });
     const grouped = window.GGTools.groupByLibrarySection(picked, window.ggLibrary || []);
     const file = document.getElementById("cs-logo").files[0];
     readLogoFile(file).then(function (logo) {
-      const fields = { name: name, scoring: window.GGTools.cfgIsCustom(cfg) ? JSON.stringify(cfg) : "", tof: picked.length ? JSON.stringify(grouped) : "" };
+      const fields = { name: name, sector: sector, scoring: window.GGTools.cfgIsCustom(cfg) ? JSON.stringify(cfg) : "", tof: picked.length ? JSON.stringify(grouped) : "" };
       if (logo) fields.logo = logo;
       return fbSaveCompany(co.id, fields).then(function () { return { logo: logo }; });
     }).then(function (r) {
       logAudit("company_customized", co.id, name);
-      co.name = name; co.scoringRaw = window.GGTools.cfgIsCustom(cfg) ? JSON.stringify(cfg) : ""; co.tofPicks = picked.length ? grouped : null;
+      co.name = name; co.sector = sector; co.scoringRaw = window.GGTools.cfgIsCustom(cfg) ? JSON.stringify(cfg) : ""; co.tofPicks = picked.length ? grouped : null;
       if (r.logo) co.logo = r.logo;
       currentUser.scoring = window.GGTools.layerCfg(parseJson(co.scoringRaw), parseJson(currentUser.scoringRaw));
       if (window.ggToolsHello) window.ggToolsHello(currentUser);
@@ -2783,7 +2882,7 @@ modalBody.addEventListener("click", function (event) {
   if (event.target.closest("[data-add-library]")) {
     const name = document.getElementById("nl-name").value.trim();
     if (!name) { toast("Type the item\u2019s text."); return; }
-    fbSaveLibraryItem(name, document.getElementById("nl-team").value)
+    fbSaveLibraryItem(name, document.getElementById("nl-team").value, document.getElementById("nl-sector").value)
       .then(function () { logAudit("library_item_added", name, ""); toast("Added."); loadLibraryTab(); document.getElementById("nl-name").value = ""; })
       .catch(function (e) { toast("Could not add: " + e.message); });
     return;
@@ -2792,8 +2891,8 @@ modalBody.addEventListener("click", function (event) {
     const lines = document.getElementById("nl-bulk").value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
     if (!lines.length) { toast("Paste at least one line."); return; }
     Promise.all(lines.map(function (l) {
-      const i = l.indexOf(",");
-      return fbSaveLibraryItem(i === -1 ? l : l.slice(0, i), i === -1 ? "" : l.slice(i + 1));
+      const parts = l.split(",").map(function (p) { return p.trim(); });
+      return fbSaveLibraryItem(parts[0], parts[1] || "", parts[2] || "");
     })).then(function () { logAudit("library_imported", lines.length + " items", ""); toast(lines.length + " item" + (lines.length === 1 ? "" : "s") + " imported."); document.getElementById("nl-bulk").value = ""; loadLibraryTab(); })
       .catch(function (e) { toast("Import stopped: " + e.message); });
     return;
