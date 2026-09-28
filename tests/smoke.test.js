@@ -521,6 +521,42 @@ const toasts = d => Array.from(d.querySelectorAll(".gg-toast")).map(e => e.textC
 
   w.close();
 
+  // =====================================================================
+  // 11. industry sector: onboarding prompt, filtered checklist, default weighting
+  // =====================================================================
+  db.item_library.hosp1 = { name: "Greeted guests warmly", team: "Opening", sector: "Hospitality" };
+  db.item_library.bpo1 = { name: "Followed the call script", team: "Delivery", sector: "BPO/KPO" };
+  db.users.U_BETA = { name: "Beta Trainer", role: "corporate", companyId: "beta-inc" }; auth["beta@corp.com"] = { pw: "betapw12", uid: "U_BETA" };
+  db.companies["beta-inc"] = { name: "Beta Inc" };
+
+  ({ w, d } = await boot({ ggSubscribed: "1" })); await loginOn(w, d, "beta@corp.com", "betapw12"); await sleep(80);
+  ok($(d, "#modal-title").textContent === "What industry are you in?" && !d.getElementById("modal-veil").hidden, "a corporate account with no sector set is asked, right after sign-in");
+  click(w, $(d, "[data-sp-save]")); await sleep(50);
+  ok(toasts(d).some(t => t.includes("Pick the closest match")) && !d.getElementById("modal-veil").hidden, "clicking Continue with nothing chosen does not close it");
+  d.getElementById("sp-sector").value = "Hospitality";
+  click(w, $(d, "[data-sp-save]")); await sleep(120);
+  ok(db.companies["beta-inc"].sector === "Hospitality" && d.getElementById("modal-veil").hidden, "picking a sector saves it and closes the prompt");
+  w.close();
+
+  ({ w, d } = await boot({ ggSubscribed: "1" })); await loginOn(w, d, "beta@corp.com", "betapw12"); await sleep(150);
+  ok(d.getElementById("modal-veil").hidden, "once a sector is set, it is not asked again on a later sign-in");
+  click(w, $(d, "#profile-chip")); click(w, $(d, '[data-user-action="customize"]')); await sleep(150);
+  ok($(d, "#cs-sector").value === "Hospitality", "Customize forms opens with the saved sector pre-selected");
+  const itemLabels = () => Array.from(d.querySelectorAll(".cs-item")).map(l => l.textContent.trim());
+  ok(itemLabels().some(t => t.includes("Greeted guests warmly")) && !itemLabels().some(t => t.includes("Followed the call script")), "the checklist is filtered to Hospitality (and General) items, hiding the BPO-only one: " + itemLabels().join(" | "));
+  click(w, $(d, "#cs-show-all")); await sleep(50);
+  ok(itemLabels().some(t => t.includes("Followed the call script")), "\"Show items from every sector\" reveals the hidden ones too");
+  click(w, $(d, "#cs-show-all")); await sleep(50);
+  ok(!!$(d, "[data-cs-sector-defaults]") && $(d, "[data-cs-sector-defaults]").textContent.includes("Hospitality"), "a \"typical weighting\" button offers to fill in Hospitality's starting numbers");
+  click(w, $(d, "[data-cs-sector-defaults]")); await sleep(50);
+  ok($(d, '[data-mu-w="l1"]').value === "25" && $(d, '[data-mu-min="att"]').value === "95", "clicking it fills the Hospitality defaults (not yet saved)");
+  click(w, d.querySelector('[data-cs-item="hosp1"]')); await sleep(50);
+  ok(d.querySelector('[data-mu-w="l1"]').value === "25", "picking a checklist item does not disturb the weighting already typed in");
+  click(w, $(d, "[data-cs-save]")); await sleep(150);
+  const tof = JSON.parse(db.companies["beta-inc"].tof || "null"), scoring = JSON.parse(db.companies["beta-inc"].scoring || "null");
+  ok(db.companies["beta-inc"].sector === "Hospitality" && tof && tof[0].ids.includes("hosp1") && scoring && scoring.eff.weights.l1 === 25, "Save persists the sector, the picked item and the sector-seeded weighting together");
+  w.close();
+
   const errs = logs.filter(l => !/Could not parse CSS|Not implemented/.test(l)); console.log("console noise:", errs.length ? errs : "none");
   console.log(fails ? "\nFAILURES: " + fails : "\nALL SMOKE TESTS PASSED"); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error("CRASH", e && e.stack); process.exit(2); });
